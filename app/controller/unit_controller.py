@@ -1,6 +1,10 @@
 from app.core.supabase import get_supabase
 from app.helper.system import get_machine_guid
 import socket
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 async def register_unit():
     """
@@ -24,8 +28,8 @@ async def register_unit():
         # Create new unit
         new_unit = {
             "guid": guid,
-            "unit_name": hostname, # Use 'unit_name' as per schema
-            "status": "online"    # Assuming 'online' is a valid enum value
+            "franchise_id": os.getenv("FRANCHISE_ID"),
+            "api_base_url": os.getenv("API_BASE_URL")
         }
         
         insert_response = supabase.table("units").insert(new_unit).execute()

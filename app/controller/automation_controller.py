@@ -153,3 +153,53 @@ async def run_automation_process(automation_id: str, arguments: Dict[str, Any]):
     )
     
     return result
+
+async def run_automation_by_identifier(identifier: str, arguments: Dict[str, Any]):
+    """
+    Run an automation identified by either its ID (UUID) or its file_name.
+    """
+    supabase = get_supabase()
+    
+    # Try searching by ID first (if it looks like a UUID-ish string)
+    # Most common UUID pattern or if it's purely numeric (depending on DB schema)
+    # Here we just try to find by ID first, then by filename if not found.
+    
+    automation_data = None
+    
+    # Try ID search
+    try:
+        response = supabase.table("automations").select("*").eq("id", identifier).execute()
+        if response.data:
+            automation_data = response.data[0]
+    except Exception:
+        # If it fails (e.g. invalid UUID format if ID is UUID), we'll try filename
+        pass
+        
+    # If not found by ID, try file_name search
+    if not automation_data:
+        response = supabase.table("automations").select("*").eq("file_name", identifier).execute()
+        if response.data:
+            automation_data = response.data[0]
+            
+    if not automation_data:
+        # Try searching with .nupkg suffix if it's missing
+        if not identifier.endswith(".nupkg"):
+            response = supabase.table("automations").select("*").eq("file_name", f"{identifier}.nupkg").execute()
+            if response.data:
+                automation_data = response.data[0]
+
+    if not automation_data:
+        raise HTTPException(status_code=404, detail=f"Automation with identifier '{identifier}' not found")
+    
+    file_name = automation_data.get("file_name")
+    if not file_name:
+        raise HTTPException(status_code=400, detail="Automation record has no 'file_name'")
+
+    # Run the automation
+    result = await run_uipath_automation(
+        process_name_or_path=file_name,
+        arguments=arguments,
+        is_file=True 
+    )
+    
+    return result

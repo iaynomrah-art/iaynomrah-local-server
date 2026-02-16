@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 
 from app.routes.automation_route import router as automation_router
 from app.routes.dashboard_route import router as dashboard_router
+from app.routes.runner_route import router as runner_router
 
 # Load environment variables
 load_dotenv()
@@ -20,6 +21,7 @@ async def startup_event():
 # Include the routes
 app.include_router(automation_router, prefix="/api/v1")
 app.include_router(dashboard_router, prefix="/api/v1")
+app.include_router(runner_router, prefix="/api/v1")
 
 @app.get("/api/health")
 async def health_check():
