@@ -12,6 +12,11 @@ load_dotenv()
 
 app = FastAPI(title="UiPath Automation Server")
 
+@app.on_event("startup")
+async def startup_event():
+    from app.controller.unit_controller import register_unit
+    await register_unit()
+
 # Include the routes
 app.include_router(automation_router, prefix="/api/v1")
 app.include_router(dashboard_router, prefix="/api/v1")
