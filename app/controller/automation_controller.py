@@ -157,12 +157,22 @@ async def run_automation_process(automation_id: str, arguments: Dict[str, Any]):
     if not file_name:
         raise HTTPException(status_code=400, detail="Automation record has no 'file_name'")
 
-    # 2. Run the automation
+    # Run the automation
     result = await run_uipath_automation(
         process_name_or_path=file_name,
         arguments=arguments,
         is_file=True 
     )
+    
+    # 3. Save to automation_history
+    try:
+        supabase.table("automation_history").insert({
+            "automation_id": automation_id,
+            "input": arguments,
+            "status": result.get("status", "unknown")
+        }).execute()
+    except Exception as e:
+        print(f"Failed to save to automation_history: {e}")
     
     return result
 
@@ -204,6 +214,8 @@ async def run_automation_by_identifier(identifier: str, arguments: Dict[str, Any
         raise HTTPException(status_code=404, detail=f"Automation with identifier '{identifier}' not found")
     
     file_name = automation_data.get("file_name")
+    automation_id = automation_data.get("id")
+    
     if not file_name:
         raise HTTPException(status_code=400, detail="Automation record has no 'file_name'")
 
@@ -213,6 +225,16 @@ async def run_automation_by_identifier(identifier: str, arguments: Dict[str, Any
         arguments=arguments,
         is_file=True 
     )
+
+    # Save to automation_history
+    try:
+        supabase.table("automation_history").insert({
+            "automation_id": automation_id,
+            "input": arguments,
+            "status": result.get("status", "unknown")
+        }).execute()
+    except Exception as e:
+        print(f"Failed to save to automation_history: {e}")
     
     # Save to history
     try:
