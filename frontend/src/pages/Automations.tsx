@@ -115,12 +115,13 @@ const Automations = () => {
     });
 
     const runMutation = useMutation({
-        mutationFn: async (file_name: string) => {
-            const response = await axios.post("/api/v1/runner", { file_name });
+        mutationFn: async (identifier: string) => {
+            // Identifier can be the automation ID or file_name
+            const response = await axios.post(`/api/v1/runner/${identifier}`, {});
             return response.data;
         },
-        onSuccess: (data) => {
-            toast.success(`Successfully triggered: ${data.automation_name || data.file_name}`);
+        onSuccess: (data, identifier) => {
+            toast.success(`Successfully triggered automation: ${identifier}`);
             console.log("Execution Result:", data);
         },
         onError: (error: any) => {
@@ -331,11 +332,11 @@ const Automations = () => {
                                                         variant="ghost"
                                                         size="icon"
                                                         className="h-8 w-8 hover:bg-green-500/10 border border-border/0 hover:border-green-500/30 transition-all group/run"
-                                                        onClick={() => runMutation.mutate(automation.file_name)}
+                                                        onClick={() => runMutation.mutate(automation.id)}
                                                         disabled={runMutation.isPending}
                                                         title="Run Automation"
                                                     >
-                                                        {runMutation.isPending && runMutation.variables === automation.file_name ? (
+                                                        {runMutation.isPending && runMutation.variables === automation.id ? (
                                                             <Loader2 className="h-4 w-4 animate-spin text-green-600" />
                                                         ) : (
                                                             <Play className="h-4 w-4 text-muted-foreground group-hover/run:text-green-600 transition-colors" />

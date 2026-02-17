@@ -7,7 +7,9 @@ from app.controller.automation_controller import (
     get_all_automations,
     create_new_automation,
     get_automation_by_id,
-    run_automation_process
+    run_automation_process,
+    get_execution_history,
+    ExecutionHistory
 )
 
 router = APIRouter()
@@ -43,3 +45,7 @@ async def run_automation(
     Pass JSON body as arguments for the process.
     """
     return await run_automation_process(automation_id, arguments)
+@router.get("/automation/history", response_model=List[ExecutionHistory])
+async def list_execution_history():
+    """Get the recent history of automation executions."""
+    return await get_execution_history()

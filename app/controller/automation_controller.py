@@ -33,6 +33,18 @@ class RunResponse(BaseModel):
     stderr: Optional[str] = None
     exit_code: Optional[int] = None
 
+class ExecutionHistory(BaseModel):
+    id: int
+    created_at: datetime
+    automation_id: Optional[str] = None
+    automation_name: Optional[str] = None
+    input: Optional[Dict[str, Any]] = None
+    status: Optional[str] = None
+    stdout: Optional[str] = None
+    stderr: Optional[str] = None
+    exit_code: Optional[int] = None
+    message: Optional[str] = None
+
 # --- Controller Functions ---
 
 async def get_all_automations():
@@ -202,4 +214,25 @@ async def run_automation_by_identifier(identifier: str, arguments: Dict[str, Any
         is_file=True 
     )
     
+    # Save to history
+    try:
+        history_data = {
+            "automation_id": automation_data.get("id"),
+            "automation_name": automation_data.get("name") or file_name,
+            "input": arguments,
+            "status": result.get("status"),
+            "stdout": result.get("stdout"),
+            "stderr": result.get("stderr"),
+            "exit_code": result.get("exit_code"),
+            "message": result.get("message")
+        }
+        supabase.table("automation_history").insert(history_data).execute()
+    except Exception as e:
+        print(f"Failed to save execution history: {e}")
+    
     return result
+
+async def get_execution_history():
+    supabase = get_supabase()
+    response = supabase.table("automation_history").select("*").order("created_at", desc=True).limit(50).execute()
+    return response.data

@@ -29,7 +29,8 @@ async def register_unit():
         new_unit = {
             "guid": guid,
             "franchise_id": os.getenv("FRANCHISE_ID"),
-            "api_base_url": os.getenv("API_BASE_URL")
+            "api_base_url": os.getenv("API_BASE_URL"),
+            "status" : "enabled"
         }
         
         insert_response = supabase.table("units").insert(new_unit).execute()
