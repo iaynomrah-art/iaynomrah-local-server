@@ -24,6 +24,9 @@ async def register_unit():
         # Check for automations in PUBLISH_AUTOMATION_FOLDER
         publish_folder = os.getenv("PUBLISH_AUTOMATION_FOLDER")
         if publish_folder:
+            # Strip path of any surrounding quotes
+            publish_folder = publish_folder.strip("'").strip('"')
+            
             if not os.path.exists(publish_folder):
                 os.makedirs(publish_folder)
             
@@ -46,7 +49,16 @@ async def register_unit():
                         continue
                     
                     if file_name not in local_files:
-                        print(f"  [MISSING] {file_name} is in bucket but not in local folder")
+                        print(f"  [MISSING] {file_name} is in bucket but not in local folder. Downloading...")
+                        try:
+                            local_path = os.path.join(publish_folder, file_name)
+                            with open(local_path, "wb") as f:
+                                # Download from Supabase
+                                res_download = supabase.storage.from_(bucket_name).download(file_name)
+                                f.write(res_download)
+                            print(f"  [DOWNLOADED] {file_name} to {local_path}")
+                        except Exception as dl_err:
+                            print(f"  [ERROR] Failed to download {file_name}: {dl_err}")
                     else:
                         print(f"  [FOUND] {file_name} is present locally")
             except Exception as e:
