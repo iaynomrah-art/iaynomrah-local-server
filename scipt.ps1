@@ -27,7 +27,7 @@ while ($true) {
     $doInstall = Read-Host "Run pip install -r requirements.txt? (y/n)"
     if ($doInstall -eq "y") {
         Write-Output "Installing Python dependencies..."
-        .\venv\Scripts\Activate.ps1
+        .\.venv\Scripts\Activate.ps1
         pip install -r requirements.txt
         if ($LASTEXITCODE -ne 0) {
             Write-Output "pip install failed."
@@ -125,7 +125,7 @@ $skipSetup = $false
     }
 
     # Activate venv and run uvicorn
-    .\venv\Scripts\Activate.ps1
+    .\.venv\Scripts\Activate.ps1
     try {
         Write-Output "Starting server..."
         uvicorn app.main:app --host 0.0.0.0 --port 2026 --reload
