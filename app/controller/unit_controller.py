@@ -70,26 +70,32 @@ async def register_unit():
             # Check if unit exists
             response = supabase.table("units").select("*").eq("guid", guid).execute()
             
+            unit_data = {
+                "guid": guid,
+                "unit_name": hostname,
+                "franchise_id": os.getenv("FRANCHISE_ID"),
+                "api_base_url": os.getenv("API_BASE_URL"),
+                "status": "enabled"
+            }
+            
             if response.data:
                 print(f"Unit already registered: {response.data[0]}")
+                # Update existing unit to ensure api_base_url is up to date
+                update_response = supabase.table("units").update(unit_data).eq("guid", guid).execute()
+                if update_response.data:
+                    print(f"Successfully updated unit: {update_response.data[0]}")
+                    return update_response.data[0]
                 return response.data[0]
             
             # Create new unit
-            new_unit = {
-                "guid": guid,
-                "franchise_id": os.getenv("FRANCHISE_ID"),
-                "api_base_url": os.getenv("API_BASE_URL"),
-                "status" : "enabled"
-            }
-            
-            insert_response = supabase.table("units").insert(new_unit).execute()
+            insert_response = supabase.table("units").insert(unit_data).execute()
             
             if insert_response.data:
                 print(f"Successfully registered new unit: {insert_response.data[0]}")
                 return insert_response.data[0]
                 
         except Exception as e:
-            print(f"Failed to register unit: {e}")
+            print(f"Failed to register or update unit: {e}")
             return None
 
     # Run the blocking logic in a thread to keep the event loop responsive
