@@ -213,46 +213,34 @@ async def run_automation_by_identifier(identifier: str, arguments: Dict[str, Any
     if not automation_data:
         raise HTTPException(status_code=404, detail=f"Automation with identifier '{identifier}' not found")
     
-    file_name = automation_data.get("file_name")
-    automation_id = automation_data.get("id")
-    
-    if not file_name:
-        raise HTTPException(status_code=400, detail="Automation record has no 'file_name'")
+    return await run_automation_process(automation_data.get("id"), arguments)
 
-    # Run the automation
-    result = await run_uipath_automation(
-        process_name_or_path=file_name,
-        arguments=arguments,
-        is_file=True 
+async def get_latest_automation_by_name(base_name: str):
+    """
+    Finds the latest version of an automation starting with base_name.
+    Expects format like 'CTraderAutomation' or 'CTraderAutomation.1.0.5.nupkg'
+    """
+    supabase = get_supabase()
+    
+    # Remove extension if provided to get the pure name
+    search_name = base_name.split('.')[0]
+    
+    # Fetch all automations matching the base name
+    # We use ilike to be flexible with the naming
+    response = supabase.table("automations").select("*").ilike("file_name", f"{search_name}%").execute()
+    
+    if not response.data:
+        return None
+    
+    # Sort by version if available, otherwise by created_at
+    # Simple version sorting: might need more robust logic if versions are complex
+    sorted_automations = sorted(
+        response.data, 
+        key=lambda x: (x.get("version") or "", x.get("created_at")), 
+        reverse=True
     )
-
-    # Save to automation_history
-    try:
-        supabase.table("automation_history").insert({
-            "automation_id": automation_id,
-            "input": arguments,
-            "status": result.get("status", "unknown")
-        }).execute()
-    except Exception as e:
-        print(f"Failed to save to automation_history: {e}")
     
-    # Save to history
-    try:
-        history_data = {
-            "automation_id": automation_data.get("id"),
-            "automation_name": automation_data.get("name") or file_name,
-            "input": arguments,
-            "status": result.get("status"),
-            "stdout": result.get("stdout"),
-            "stderr": result.get("stderr"),
-            "exit_code": result.get("exit_code"),
-            "message": result.get("message")
-        }
-        supabase.table("automation_history").insert(history_data).execute()
-    except Exception as e:
-        print(f"Failed to save execution history: {e}")
-    
-    return result
+    return sorted_automations[0]
 
 async def get_execution_history():
     supabase = get_supabase()

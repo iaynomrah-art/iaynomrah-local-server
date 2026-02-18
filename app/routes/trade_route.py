@@ -1,7 +1,11 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from typing import Optional, Literal
-from app.controller.automation_controller import run_automation_by_identifier, RunResponse
+from app.controller.automation_controller import (
+    get_latest_automation_by_name, 
+    run_automation_process, 
+    RunResponse
+)
 
 router = APIRouter()
 
@@ -22,16 +26,31 @@ class CTraderTradeRequest(BaseModel):
 @router.post("/trade/ctrader", response_model=RunResponse)
 async def run_ctrader_automation(trade_data: CTraderTradeRequest):
     """
-    Specifically runs the 'CtraderAutomation' with validated trading parameters.
+    Finds the latest version of 'CTraderAutomation' and runs it with validated trading parameters.
     """
-    automation_identifier = "CtraderAutomation" # The name of your .nupkg file
+    automation_name = "CTraderAutomation"
     
-    # Convert Pydantic model to dict for the robot arguments
+    # 1. Find the latest version
+    latest_item = await get_latest_automation_by_name(automation_name)
+    
+    if not latest_item:
+        raise HTTPException(
+            status_code=404, 
+            detail=f"No automation found for '{automation_name}'"
+        )
+    
+    automation_id = latest_item.get("id")
+    file_name = latest_item.get("file_name")
+    version = latest_item.get("version", "unknown")
+    
+    print(f"Running latest automation: {file_name} (Version: {version}, ID: {automation_id})")
+
+    # 2. Convert Pydantic model to dict for the robot arguments
     arguments = trade_data.model_dump()
     
     try:
-        # We reuse the controller logic to find the record and run it
-        result = await run_automation_by_identifier(automation_identifier, arguments)
+        # 3. Run the automation using its specific ID
+        result = await run_automation_process(automation_id, arguments)
         
         if result.get("status") == "error":
             raise HTTPException(
@@ -42,7 +61,6 @@ async def run_ctrader_automation(trade_data: CTraderTradeRequest):
         return result
         
     except HTTPException as e:
-        # Re-raise explicit HTTP exceptions (like 404 if file not found)
         raise e
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")

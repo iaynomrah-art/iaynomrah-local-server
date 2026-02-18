@@ -1,11 +1,11 @@
 # Navigate to project directory
-Set-Location "C:\Users\Admin\Desktop\HARMONY\harmony-local-server"
+Set-Location "C:\Users\Admin\Documents\code\iaynomrah-local-server"
 
 # Define paths
 $logPath = ".\cloudflared.log"
 $errorLogPath = ".\cloudflared_error.log"
 $envPath = ".\.env"
-$rootPath = "C:\Users\Admin\Desktop\HARMONY\harmony-local-server"
+$rootPath = "C:\Users\Admin\Documents\code\iaynomrah-local-server"
 $frontendPath = "$rootPath\frontend"
 
 $skipSetup = $false
