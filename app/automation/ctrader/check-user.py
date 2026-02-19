@@ -14,8 +14,12 @@ def check_user(page, username, account_id):
     """
     random_delay(page, 1000, 2500)
 
-    # Click the account dropdown (the arrow/chevron area)
-    dropdown = page.locator('svg#ic_tree_expanded').first
+    # Wait for the account dropdown area to be available
+    page.wait_for_selector('svg#ic_tree_expanded', state="attached", timeout=15000)
+    print("Account dropdown area found")
+
+    # Click the parent container of the SVG arrow (the SVG itself is not reliably clickable)
+    dropdown = page.locator('svg#ic_tree_expanded').first.locator('..')
     dropdown.click()
     print("Clicked account dropdown")
 

@@ -9,6 +9,7 @@ router = APIRouter()
 class CTraderTradeRequest(BaseModel):
     username: str = Field(..., description="Username for the account")
     password: str = Field(..., description="Password for the account")
+    purchase_type: Literal["buy", "sell"] = Field(..., description="Type of purchase: buy or sell")
     order_amount: str = Field(..., description="Amount to trade (e.g., '0.1')")
     take_profit: str = Field(..., description="Take profit value")
     stop_loss: str = Field(..., description="Stop loss value")
@@ -31,6 +32,7 @@ async def run_ctrader_automation(trade_data: CTraderTradeRequest):
             run_ctrader,
             username=trade_data.username,
             password=trade_data.password,
+            purchase_type=trade_data.purchase_type,
             order_amount=trade_data.order_amount,
             take_profit=trade_data.take_profit,
             stop_loss=trade_data.stop_loss,
