@@ -62,7 +62,7 @@ To launch the Harmony server automatically when you log in:
 2. Right-click inside the folder and select **New > Shortcut**.
 3. In the location box, paste the following (adjust the path if moved):
    ```powershell
-   powershell.exe -WindowStyle Hidden -ExecutionPolicy Bypass -File "C:\Users\Admin\Desktop\HARMONY\harmony-local-server\scipt.ps1"
+   powershell.exe -WindowStyle Hidden -ExecutionPolicy Bypass -File "C:\Users\Admin\Desktop\Code\iaynomrah-local-server\script.ps1"
    ```
 4. Click **Next** and name it `Harmony Server`.
 
