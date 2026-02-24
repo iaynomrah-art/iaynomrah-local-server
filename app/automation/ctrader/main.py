@@ -1,6 +1,7 @@
 import importlib
 import os
 import threading
+from pathlib import Path
 
 # --- Module Imports ---
 check_user_module = importlib.import_module("app.automation.ctrader.check-user")
@@ -16,25 +17,51 @@ input_order_module = importlib.import_module("app.automation.ctrader.input-order
 input_order = input_order_module.input_order
 
 _playwright = None
-_browser = None
-_user_contexts = {}
-_user_pages = {}
-_browser_lock = threading.Lock()
-_session_lock = threading.Lock()
+_user_contexts = {}  # Map username -> persistent context
+_user_pages = {}     # Map username -> active page
+_lock = threading.Lock()
 
-def get_browser():
-    """Starts the browser once and keeps it running for future calls."""
-    global _playwright, _browser
-    with _browser_lock:
-        if _playwright is None:
-            print("Starting persistent Playwright browser instance...")
-            from playwright.sync_api import sync_playwright
-            _playwright = sync_playwright().start()
-            _browser = _playwright.chromium.launch(
-                channel="chrome",
-                headless=False  # Set to True when you deploy to production
-            )
-    return _browser
+def get_playwright():
+    """Starts the playwright instance if not already started."""
+    global _playwright
+    if _playwright is None:
+        from playwright.sync_api import sync_playwright
+        _playwright = sync_playwright().start()
+    return _playwright
+
+def get_user_context(username: str):
+    """Gets or creates a persistent context for the specific user."""
+    global _user_contexts
+    
+    if username in _user_contexts:
+        return _user_contexts[username]
+
+    pw = get_playwright()
+    
+    # Define absolute path for the profile directory
+    base_dir = Path(__file__).resolve().parent.parent.parent.parent
+    profile_dir = base_dir / "ctrader_profile" / username
+    profile_dir.mkdir(parents=True, exist_ok=True)
+    
+    print(f"Launching persistent context for {username} at {profile_dir}...")
+    
+    context = pw.chromium.launch_persistent_context(
+        user_data_dir=str(profile_dir),
+        channel="chrome",
+        headless=False,  # Set to True for production server
+        args=[
+            "--no-sandbox",
+            "--disable-setuid-sandbox",
+            "--disable-dev-shm-usage",
+            "--disable-accelerated-2d-canvas",
+            "--no-first-run",
+            "--no-zygote",
+            "--disable-gpu"
+        ]
+    )
+    
+    _user_contexts[username] = context
+    return context
 
 def run(
     username: str,
@@ -47,107 +74,99 @@ def run(
     symbol: str,
     operation: str
 ):
-    global _user_contexts, _user_pages
-    # 1. Get the globally running browser (starts it if it's the first run)
-    browser = get_browser()
+    global _user_pages
     
-    # 2. Define a state file unique to this user
-    state_file = f"state_{username}.json"
-
-    try:
-        # 3. Check if we already have an active page for this user
-        with _session_lock:
-            page = _user_pages.get(username)
-            context = _user_contexts.get(username)
-
-            if page and not page.is_closed():
-                print(f"Reusing existing tab for {username}...")
-            else:
-                print(f"Creating new context and tab for {username}...")
-                # Create a lightweight context, injecting cookies if they exist
-                if os.path.exists(state_file):
-                    print(f"Injecting saved session for {username}...")
-                    context = browser.new_context(storage_state=state_file)
-                else:
-                    print(f"No saved session for {username}. Creating new context.")
-                    context = browser.new_context()
-
-                page = context.new_page()
-                _user_contexts[username] = context
-                _user_pages[username] = page
-        
-        print(f"Navigating to cTrader for {username}...")
-        page.goto("https://app.ctrader.com", timeout=60000)
-
-        # 1. Wait for the foundational HTML/DOM to finish loading before we start looking for things
-        page.wait_for_load_state("domcontentloaded")
-
-        # Check if already logged in by looking for the "Log in" button
-        login_button = page.locator('button[type="button"]:has-text("Log in")')
-        
+    with _lock:
         try:
-            # 2. Increase the timeout to 20 seconds (20000 ms) to account for slow loading times
-            login_button.wait_for(state="visible", timeout=20000)
+            # 1. Get the persistent context for this user
+            context = get_user_context(username)
             
-            # "Log in" button is visible — not logged in, need to login
-            print("Not logged in. Starting login flow...")
+            # 2. Check if we already have an active page, or find one in the context
+            page = _user_pages.get(username)
             
-            from app.automation.ctrader.login import login
-            login(page, username, password)
+            # If the stored page is closed, try to grab an existing page from context (if any)
+            if page and page.is_closed():
+                page = None
             
-            # Wait for the login process to settle before saving state
-            page.wait_for_load_state("networkidle")
+            if not page:
+                existing_pages = context.pages
+                if existing_pages:
+                    page = existing_pages[0]
+                    print(f"Found existing tab for {username}. Reusing...")
+                else:
+                    print(f"Creating new tab for {username}...")
+                    page = context.new_page()
+                
+                _user_pages[username] = page
+
+            # 3. Bring to front and navigate
+            page.bring_to_front()
             
-            # Save the session state for next time
-            context.storage_state(path=state_file)
-            print("Session state saved successfully.")
+            # Only navigate if we aren't already on cTrader or if we are on a blank page
+            current_url = page.url
+            if "ctrader.com" not in current_url:
+                print(f"Navigating to cTrader for {username}...")
+                page.goto("https://app.ctrader.com", timeout=60000)
+                page.wait_for_load_state("domcontentloaded")
+            else:
+                print(f"Already on cTrader for {username}. Reusing current page state.")
+
+            # 4. Check login status
+            # If we are in a persistent context, we might already be logged in
+            login_button = page.locator('button[type="button"]:has-text("Log in")')
+            
+            try:
+                # Wait briefly to see if login button appears (meaning we are NOT logged in)
+                login_button.wait_for(state="visible", timeout=5000)
+                print("Not logged in. Starting login flow...")
+                
+                from app.automation.ctrader.login import login as login_flow
+                login_flow(page, username, password)
+                
+                # Wait for navigation/dashboard
+                page.wait_for_load_state("networkidle")
+                print("Login flow completed.")
+            except Exception:
+                # If timeout or not visible, assume we are logged in
+                print("No login button detected. Assuming already logged in via persistent session.")
+
+            # 5. Verify the user and select the correct account
+            check_user(page, username, account_id)
+
+            # 6. Route to the correct operation
+            success = False
+            match operation:
+                case "place-order":
+                    success = place_order(page, purchase_type, order_amount, symbol, take_profit, stop_loss)
+                case "edit-place-order":
+                    success = edit_place_order(page, purchase_type, order_amount, symbol, take_profit, stop_loss)
+                case "default" | "1" | _:
+                    print(f"Operation: {operation} (Default). Running input_order...")
+                    success = input_order(page, purchase_type, order_amount, symbol, take_profit, stop_loss)
+
+            if not success:
+                print(f"WARNING: Operation '{operation}' did not return a confirmed success status.")
+
+            return {
+                "status": "success",
+                "message": f"cTrader automation completed for {symbol} ({operation})",
+                "confirmed": success,
+                "details": {
+                    "account_id": account_id,
+                    "symbol": symbol,
+                    "operation": operation,
+                    "purchase_type": purchase_type,
+                    "order_amount": order_amount,
+                    "take_profit": take_profit,
+                    "stop_loss": stop_loss,
+                }
+            }
 
         except Exception as e:
-            # If 20 seconds pass and the button STILL isn't there, we are genuinely logged in
-            print(f"Login button not found or already logged in. Continuing... (Note: {str(e)})")
-
-        # Verify the user and select the correct account
-        check_user(page, username, account_id)
-
-        # Route to the correct operation and capture success
-        success = False
-        match operation:
-            case "place-order":
-                success = place_order(page, purchase_type, order_amount, symbol, take_profit, stop_loss)
-            case "edit-place-order":
-                success = edit_place_order(page, purchase_type, order_amount, symbol, take_profit, stop_loss)
-            case "default" | "1" | _:
-                print(f"Operation: {operation} (Default). Running input_order...")
-                success = input_order(page, purchase_type, order_amount, symbol, take_profit, stop_loss)
-
-        if not success:
-            print(f"WARNING: Operation '{operation}' did not return a confirmed success status.")
-
-        return {
-            "status": "success",
-            "message": f"cTrader automation completed for {symbol} ({operation})",
-            "confirmed": success,
-            "details": {
-                "account_id": account_id,
-                "symbol": symbol,
-                "operation": operation,
-                "purchase_type": purchase_type,
-                "order_amount": order_amount,
-                "take_profit": take_profit,
-                "stop_loss": stop_loss,
+            print(f"ERROR in run_ctrader for {username}: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return {
+                "status": "error",
+                "message": f"Automation failed: {str(e)}"
             }
-        }
-    except ValueError as ve:
-        print(f"VALIDATION ERROR in run_ctrader: {str(ve)}")
-        return {
-            "status": "error",
-            "message": f"Validation failed: {str(ve)}"
-        }
-    except Exception as e:
-        print(f"ERROR in run_ctrader: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        return {
-            "status": "error",
-            "message": f"Automation failed: {str(e)}"
-        }
