@@ -1,7 +1,14 @@
+import sys
+import asyncio
+
+if sys.platform == 'win32':
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+    print("DEBUG: Set WindowsProactorEventLoopPolicy")
+
+import os
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-import os
 from dotenv import load_dotenv
 
 from app.routes.automation_route import router as automation_router
