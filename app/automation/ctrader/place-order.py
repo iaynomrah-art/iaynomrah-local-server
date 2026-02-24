@@ -11,12 +11,12 @@ def random_delay(page, min_ms=800, max_ms=2500):
     page.wait_for_timeout(delay)
 
 
-def execute_order(page):
+def place_order(page):
     """
     Clicks the 'Place order' button to execute the order that was previously filled.
     """
     try:
-        print("Attempting to execute order...")
+        print("Attempting to place order (clicking button)...")
 
         # Selectors for the Place order / Execute button
         selectors = [
@@ -38,7 +38,7 @@ def execute_order(page):
         if execute_button:
             print(f"Found execution button: {execute_button.inner_text()}")
             execute_button.click()
-            print("Clicked execution button.")
+            print("Clicked Place Order button.")
             
             random_delay(page, 1000, 2000)
 
@@ -62,12 +62,12 @@ def execute_order(page):
         return False
 
 
-def place_order(page, purchase_type, order_amount, symbol, take_profit, stop_loss):
+def full_place_order(page, purchase_type, order_amount, symbol, take_profit, stop_loss):
     """
     Places a new order by filling in the order form and clicking the submit button.
     (Full Cycle: Fill + Execute)
     """
-    print(f"Placing order: {purchase_type} {order_amount} {symbol}")
+    print(f"Running Full Cycle Order: {purchase_type} {order_amount} {symbol}")
 
     # Step 1: Fill in the order form
     if not input_order(page, purchase_type, order_amount, symbol, take_profit, stop_loss):
@@ -77,4 +77,4 @@ def place_order(page, purchase_type, order_amount, symbol, take_profit, stop_los
     random_delay(page, 500, 1500)
 
     # Step 2: Execute the order
-    return execute_order(page)
+    return place_order(page)

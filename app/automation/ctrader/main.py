@@ -8,8 +8,8 @@ check_user_module = importlib.import_module("app.automation.ctrader.check-user")
 check_user = check_user_module.check_user
 
 place_order_module = importlib.import_module("app.automation.ctrader.place-order")
-place_order = place_order_module.place_order
-execute_order = place_order_module.execute_order
+place_order_click = place_order_module.place_order
+full_place_order = place_order_module.full_place_order
 
 edit_place_order_module = importlib.import_module("app.automation.ctrader.edit-place-order")
 edit_place_order = edit_place_order_module.edit_place_order
@@ -138,13 +138,13 @@ def run(
             success = False
             match operation:
                 case "place-order":
-                    success = place_order(page, purchase_type, order_amount, symbol, take_profit, stop_loss)
+                    success = place_order_click(page)
+                case "auto-place-order":
+                    success = full_place_order(page, purchase_type, order_amount, symbol, take_profit, stop_loss)
                 case "edit-place-order":
                     success = edit_place_order(page, purchase_type, order_amount, symbol, take_profit, stop_loss)
                 case "input-order":
                     success = input_order(page, purchase_type, order_amount, symbol, take_profit, stop_loss)
-                case "execute-order":
-                    success = execute_order(page)
                 case "default" | "1" | _:
                     print(f"Operation: {operation} (Default). Running input_order...")
                     success = input_order(page, purchase_type, order_amount, symbol, take_profit, stop_loss)
