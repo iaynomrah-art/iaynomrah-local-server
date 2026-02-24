@@ -46,6 +46,8 @@ def check_user(page, username, account_id):
         account_element.click()
         print(f"Selected account: {account_id}")
     else:
-        print(f"Warning: Account ID '{account_id}' not found in the account list")
+        error_msg = f"Account ID '{account_id}' not found in the account list"
+        print(f"CRITICAL ERROR: {error_msg}")
+        raise ValueError(error_msg)
 
     random_delay(page, 800, 2000)
