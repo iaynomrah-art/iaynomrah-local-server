@@ -9,6 +9,7 @@ check_user = check_user_module.check_user
 
 place_order_module = importlib.import_module("app.automation.ctrader.place-order")
 place_order = place_order_module.place_order
+execute_order = place_order_module.execute_order
 
 edit_place_order_module = importlib.import_module("app.automation.ctrader.edit-place-order")
 edit_place_order = edit_place_order_module.edit_place_order
@@ -65,14 +66,14 @@ def get_user_context(username: str):
 
 def run(
     username: str,
-    password: str,
-    purchase_type: str,
-    order_amount: str,
-    take_profit: str,
-    stop_loss: str,
-    account_id: str,
-    symbol: str,
-    operation: str
+    operation: str,
+    password: str = None,
+    purchase_type: str = None,
+    order_amount: str = None,
+    take_profit: str = None,
+    stop_loss: str = None,
+    account_id: str = None,
+    symbol: str = None
 ):
     global _user_pages
     
@@ -140,6 +141,10 @@ def run(
                     success = place_order(page, purchase_type, order_amount, symbol, take_profit, stop_loss)
                 case "edit-place-order":
                     success = edit_place_order(page, purchase_type, order_amount, symbol, take_profit, stop_loss)
+                case "input-order":
+                    success = input_order(page, purchase_type, order_amount, symbol, take_profit, stop_loss)
+                case "execute-order":
+                    success = execute_order(page)
                 case "default" | "1" | _:
                     print(f"Operation: {operation} (Default). Running input_order...")
                     success = input_order(page, purchase_type, order_amount, symbol, take_profit, stop_loss)

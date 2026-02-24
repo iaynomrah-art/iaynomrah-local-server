@@ -8,14 +8,14 @@ router = APIRouter()
 
 class CTraderTradeRequest(BaseModel):
     username: str = Field(..., description="Username for the account")
-    password: str = Field(..., description="Password for the account")
-    purchase_type: Literal["buy", "sell"] = Field(..., description="Type of purchase: buy or sell")
-    order_amount: str = Field(..., description="Amount to trade (e.g., '0.1')")
-    take_profit: str = Field(..., description="Take profit value")
-    stop_loss: str = Field(..., description="Stop loss value")
-    account_id: str = Field(..., description="The trading account ID")
-    symbol: str = Field(..., description="Symbol to trade (e.g., 'EURUSD')")
-    operation: Literal["default", "edit-place-order", "place-order"] = Field(
+    password: str = Field(None, description="Password for the account")
+    purchase_type: Literal["buy", "sell"] = Field(None, description="Type of purchase: buy or sell")
+    order_amount: str = Field(None, description="Amount to trade (e.g., '0.1')")
+    take_profit: str = Field(None, description="Take profit value")
+    stop_loss: str = Field(None, description="Stop loss value")
+    account_id: str = Field(None, description="The trading account ID")
+    symbol: str = Field(None, description="Symbol to trade (e.g., 'EURUSD')")
+    operation: Literal["default", "edit-place-order", "place-order", "input-order", "execute-order"] = Field(
         "default", 
         description="The operation to perform"
     )
