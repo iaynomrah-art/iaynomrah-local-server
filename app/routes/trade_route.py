@@ -20,6 +20,16 @@ class CTraderTradeRequest(BaseModel):
         description="The operation to perform"
     )
 
+@router.get("/trade/credentials")
+async def get_ctrader_credentials():
+    """Fetch all cTrader platform credentials from Supabase."""
+    from app.core.supabase import get_supabase
+    
+    supabase = get_supabase()
+    response = supabase.table("credentials").select("*").eq("platform", "cTrader").execute()
+    
+    return response.data
+
 @router.post("/trade/ctrader")
 async def run_ctrader_automation(trade_data: CTraderTradeRequest):
     """
