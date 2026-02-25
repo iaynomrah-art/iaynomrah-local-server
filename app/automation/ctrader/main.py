@@ -30,12 +30,30 @@ def get_playwright():
         _playwright = sync_playwright().start()
     return _playwright
 
+def _cleanup_user(username: str):
+    """Cleans up cached context and page for a user."""
+    global _user_contexts, _user_pages
+    print(f"Cleaning up cached browser state for {username}...")
+    _user_contexts.pop(username, None)
+    _user_pages.pop(username, None)
+
 def get_user_context(username: str):
     """Gets or creates a persistent context for the specific user."""
     global _user_contexts
     
     if username in _user_contexts:
-        return _user_contexts[username]
+        context = _user_contexts[username]
+        # Check if the context is still usable
+        try:
+            # A simple way to check if the browser is still connected
+            if context.browser and context.browser.is_connected():
+                return context
+        except Exception:
+            pass
+        
+        # If we reach here, the context is likely stale
+        print(f"Context for {username} is stale or closed. Re-initializing...")
+        _cleanup_user(username)
 
     pw = get_playwright()
     
@@ -60,6 +78,9 @@ def get_user_context(username: str):
             "--disable-gpu"
         ]
     )
+    
+    # Register close handler to cleanup when browser is closed manually
+    context.on("close", lambda ctx: _cleanup_user(username))
     
     _user_contexts[username] = context
     return context
@@ -90,18 +111,36 @@ def run(
                 page = None
             
             if not page:
-                existing_pages = context.pages
-                if existing_pages:
-                    page = existing_pages[0]
-                    print(f"Found existing tab for {username}. Reusing...")
-                else:
-                    print(f"Creating new tab for {username}...")
-                    page = context.new_page()
+                try:
+                    existing_pages = context.pages
+                    if existing_pages:
+                        page = existing_pages[0]
+                        print(f"Found existing tab for {username}. Reusing...")
+                    else:
+                        print(f"Creating new tab for {username}...")
+                        page = context.new_page()
+                except Exception as e:
+                    if "Target closed" in str(e) or "context has been closed" in str(e):
+                        print(f"Context closed unexpectedly for {username}. Retrying with new context...")
+                        _cleanup_user(username)
+                        context = get_user_context(username)
+                        page = context.new_page()
+                    else:
+                        raise e
                 
                 _user_pages[username] = page
 
             # 3. Bring to front and navigate
-            page.bring_to_front()
+            try:
+                page.bring_to_front()
+            except Exception as e:
+                if "Target closed" in str(e):
+                    print(f"Page closed unexpectedly for {username}. Re-creating...")
+                    page = context.new_page()
+                    _user_pages[username] = page
+                    page.bring_to_front()
+                else:
+                    raise e
             
             # Only navigate if we aren't already on cTrader or if we are on a blank page
             current_url = page.url
@@ -168,10 +207,16 @@ def run(
             }
 
         except Exception as e:
-            print(f"ERROR in run_ctrader for {username}: {str(e)}")
+            msg = str(e)
+            print(f"ERROR in run_ctrader for {username}: {msg}")
+            
+            # If it's a closure error, cleanup so the next attempt starts fresh
+            if "Target page, context or browser has been closed" in msg or "Target closed" in msg:
+                _cleanup_user(username)
+                
             import traceback
             traceback.print_exc()
             return {
                 "status": "error",
-                "message": f"Automation failed: {str(e)}"
+                "message": f"Automation failed: {msg}"
             }

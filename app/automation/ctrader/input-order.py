@@ -1,35 +1,53 @@
 import random
 
-
 def random_delay(page, min_ms=800, max_ms=2500):
     """Wait a random duration to appear more human-like."""
     delay = random.randint(min_ms, max_ms)
     page.wait_for_timeout(delay)
 
 
-def _ensure_field_enabled_and_fill(page, label_text, input_placeholder, value, timeout=5000):
-    
-    input_locator = page.locator(f'input[placeholder="{input_placeholder}"]').first
-
-    # --- Attempt 1: Input already visible ---
-    try:
-        if input_locator.is_visible(timeout=1000):
-            input_locator.click()
-            page.keyboard.press("Control+A")
-            page.keyboard.press("Backspace")
-            input_locator.fill(str(value))
-            print(f"  ✓ {label_text} field was already visible — filled with {value}")
-            return True
-    except Exception:
-        pass  # Field not visible yet, proceed to toggle
-
-    # --- Attempt 2: Click the label text to toggle the field on ---
-    print(f"  ⏳ {label_text} field not visible — clicking label to enable...")
-
-    # Use get_by_text with exact match on the label to avoid clicking wrong elements.
-    # cTrader renders the label as plain text inside a custom component row.
+def _ensure_field_enabled_and_fill(page, label_text, value, timeout=5000):
+    """
+    Robustly locates the input by isolating the exact UI block.
+    Uses negative filters to prevent Playwright from accidentally matching the entire form.
+    """
+    # 1. Target the literal text label for clicking (e.g., "Take profit")
     label_locator = page.get_by_text(label_text, exact=True).first
 
+    # 2. Strict Container Locator:
+    # - Must contain the label ("Take profit")
+    # - Must contain the exact text "Pips" (proves it is expanded)
+    # - MUST NOT contain "Quantity" or "Place order" (prevents bubbling up to the main form)
+    section_container = page.locator("div").filter(
+        has=page.get_by_text(label_text, exact=True)
+    ).filter(
+        has=page.get_by_text("Pips", exact=True)
+    ).filter(
+        has_not_text="Quantity"
+    ).filter(
+        has_not_text="Place order"
+    ).last
+    
+    # The Pips input is always the first text input inside this specific isolated wrapper
+    input_locator = section_container.locator("input[type='text']").first
+
+    # --- Attempt 1: Check if input is already visible and expanded ---
+    try:
+        # Short wait to see if the isolated block resolves
+        input_locator.wait_for(state="visible", timeout=1000)
+        
+        # If found, click it explicitly to move focus
+        input_locator.click(timeout=1000)
+        page.keyboard.press("Control+A")
+        page.keyboard.press("Backspace")
+        input_locator.fill(str(value))
+        
+        print(f"  ✓ {label_text} field was already visible — filled Pips with {value}")
+        return True
+    except Exception:
+        print(f"  ⏳ {label_text} field hidden — clicking text label to enable...")
+
+    # --- Attempt 2: Click the label text to toggle the field on ---
     try:
         label_locator.wait_for(state="visible", timeout=timeout)
         label_locator.click()
@@ -38,16 +56,21 @@ def _ensure_field_enabled_and_fill(page, label_text, input_placeholder, value, t
         print(f"  ✗ Could not find or click '{label_text}' label: {e}")
         return False
 
-    random_delay(page, 300, 600)
+    # Brief human-like pause while the DOM renders the new input fields
+    random_delay(page, 400, 800)
 
-    # --- Attempt 3: Wait for the input to appear after toggling ---
+    # --- Attempt 3: Wait explicitly for the input to mount in the DOM ---
     try:
+        # Now that it's expanded, the section_container will successfully resolve
         input_locator.wait_for(state="visible", timeout=timeout)
-        input_locator.click()
+        
+        # Explicit click ensures focus is on THIS input
+        input_locator.click(timeout=1000)
         page.keyboard.press("Control+A")
         page.keyboard.press("Backspace")
         input_locator.fill(str(value))
-        print(f"  ✓ {label_text} field appeared after toggle — filled with {value}")
+        
+        print(f"  ✓ {label_text} field appeared after toggle — filled Pips with {value}")
         return True
     except Exception as e:
         print(f"  ✗ {label_text} input did not become visible after toggle: {e}")
@@ -111,17 +134,17 @@ def input_order(page, purchase_type, order_amount, symbol, take_profit, stop_los
 
         random_delay(page, 400, 1000)
 
-        # 4. Fill in take profit (robust toggle + fill)
+        # 4. Fill in take profit
         if take_profit:
             print("Handling Take Profit...")
-            _ensure_field_enabled_and_fill(page, "Take profit", "T/P", take_profit)
+            _ensure_field_enabled_and_fill(page, "Take profit", take_profit)
 
         random_delay(page, 400, 1000)
 
-        # 5. Fill in stop loss (robust toggle + fill)
+        # 5. Fill in stop loss
         if stop_loss:
             print("Handling Stop Loss...")
-            _ensure_field_enabled_and_fill(page, "Stop loss", "S/L", stop_loss)
+            _ensure_field_enabled_and_fill(page, "Stop loss", stop_loss)
 
         random_delay(page, 300, 800)
         print("Order input complete.")
