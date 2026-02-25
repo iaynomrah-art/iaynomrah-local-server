@@ -8,18 +8,7 @@ def random_delay(page, min_ms=800, max_ms=2500):
 
 
 def _ensure_field_enabled_and_fill(page, label_text, input_placeholder, value, timeout=5000):
-    """
-    Robustly enable and fill a Stop Loss or Take Profit field on cTrader.
-
-    Strategy:
-      1. Try to find the input field directly. If it's visible and interactable, fill it.
-      2. If the input is NOT found or NOT visible, click the label text to toggle it on.
-      3. Wait explicitly until the input field becomes visible.
-      4. Fill the value.
-
-    This avoids relying on SVG checkbox state, dynamic CSS classes, or standard
-    checkbox attributes — none of which are reliable in cTrader's custom UI.
-    """
+    
     input_locator = page.locator(f'input[placeholder="{input_placeholder}"]').first
 
     # --- Attempt 1: Input already visible ---
