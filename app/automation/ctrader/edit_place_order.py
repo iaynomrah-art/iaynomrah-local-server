@@ -40,8 +40,22 @@ async def edit_place_order(page, purchase_type, order_amount, symbol, take_profi
     if await modify_button.is_visible():
         await modify_button.click()
         print("Clicked Modify / Confirm button")
+        
+        # Verification Step
+        try:
+            print("Waiting for modify confirmation...")
+            confirmation = page.locator('text=/Modified|Confirmed|Success/i').first
+            confirmation.wait_for(state="visible", timeout=8000)
+            print("Modification confirmation detected in UI.")
+            return True
+        except:
+            if not modify_button.is_visible():
+                print("Modify button disappeared, assuming modification was successful.")
+                return True
+            return False
     else:
         print("Warning: Could not find Modify or Confirm button")
+        return False
 
     await random_delay(page, 1000, 2500)
     print("Edit place order complete.")

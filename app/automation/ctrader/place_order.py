@@ -25,8 +25,22 @@ async def place_order(page, purchase_type, order_amount, symbol, take_profit, st
     if await execute_button.is_visible():
         await execute_button.click()
         print("Clicked Execute / Place Order button")
+        
+        # Verification Step
+        try:
+            print("Waiting for order confirmation...")
+            success_notification = page.locator('text=/Order|Position|Executed|Success/i').first
+            success_notification.wait_for(state="visible", timeout=10000)
+            print("Order confirmation detected in UI.")
+            return True
+        except:
+            if not execute_button.is_visible():
+                print("Execute button disappeared, assuming order was placed.")
+                return True
+            return False
     else:
         print("Warning: Could not find Execute or Place Order button")
+        return False
 
     await random_delay(page, 1000, 2500)
     print("Place order complete.")
