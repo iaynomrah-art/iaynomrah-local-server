@@ -43,7 +43,19 @@ def check_user(page, username, account_id):
     account_element = page.locator(f'span:has-text("{account_id}")').first
     
     if account_element.is_visible():
+        try:
+            toast_close_btn = page.locator("#ic_cross").first
+            # Fast check: wait just 1 second to see if it's there
+            if toast_close_btn.is_visible(timeout=1000):
+                print("  🧹 Blocking toast notification detected. Closing it...")
+                toast_close_btn.click()
+                page.wait_for_timeout(500) # Give the slide-out animation time to finish
+        except Exception:
+            pass # If no toast is there, silently proceed
+            
+        # Now safely click the account dropdown
         account_element.click()
+        
         print(f"Selected account: {account_id}")
     else:
         error_msg = f"Account ID '{account_id}' not found in the account list"

@@ -85,6 +85,52 @@ def get_user_context(username: str):
     _user_contexts[username] = context
     return context
 
+
+def ensure_ctrader_loaded(page, url="https://app.ctrader.com"):
+    """
+    Navigates to cTrader and aggressively forces reloads if the SPA framework hangs.
+    """
+    print(f"Navigating to {url}...")
+    
+    # --- ATTEMPT 1: Standard Navigation ---
+    try:
+        page.goto(url, wait_until="domcontentloaded", timeout=45000)
+        print("Waiting for cTrader to render (checking for Login screen or Workspace)...")
+        indicator = page.locator('button[type="button"]:has-text("Log in"), text="Positions"').first
+        indicator.wait_for(state="visible", timeout=15000)
+        print("  ✓ cTrader UI loaded successfully on the first try.")
+        return True
+    except Exception:
+        print("  ⏳ Attempt 1 failed. Initiating API reload...")
+
+    # --- ATTEMPT 2: Playwright API Reload ---
+    try:
+        page.reload(wait_until="domcontentloaded", timeout=30000)
+        indicator = page.locator('button[type="button"]:has-text("Log in"), text="Positions"').first
+        indicator.wait_for(state="visible", timeout=15000)
+        print("  ✓ cTrader UI loaded successfully after API reload.")
+        return True
+    except Exception:
+        print("  ⏳ Attempt 2 failed. Forcing raw keyboard reload (Ctrl + Shift + R)...")
+
+    # --- ATTEMPT 3: Keyboard Force Reload (The "Ctrl+R" bypass) ---
+    try:
+        # Click the top-left corner to ensure the web page has OS-level focus
+        page.mouse.click(10, 10)
+        page.wait_for_timeout(500)
+        
+        # Use Ctrl+Shift+R for a hard, cache-clearing refresh
+        page.keyboard.press("Control+Shift+R")
+        
+        # Because we bypassed Playwright's navigation logic, we just wait for the element to appear
+        indicator = page.locator('button[type="button"]:has-text("Log in"), text="Positions"').first
+        indicator.wait_for(state="visible", timeout=25000)
+        print("  ✓ cTrader UI loaded successfully after Ctrl+Shift+R force reload.")
+        return True
+    except Exception as e:
+        print(f"  ✗ Critical failure: cTrader completely failed to render. Error: {e}")
+        return False
+
 def run(
     username: str,
     operation: str,
@@ -146,8 +192,9 @@ def run(
             current_url = page.url
             if "ctrader.com" not in current_url:
                 print(f"Navigating to cTrader for {username}...")
-                page.goto("https://app.ctrader.com", timeout=60000)
-                page.wait_for_load_state("domcontentloaded")
+                # --- NEW SMART LOAD LOGIC ---
+                if not ensure_ctrader_loaded(page):
+                    raise Exception("cTrader failed to load properly after multiple attempts.")
             else:
                 print(f"Already on cTrader for {username}. Reusing current page state.")
 
