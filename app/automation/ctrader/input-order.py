@@ -1,23 +1,15 @@
 import random
+import re
 
 def random_delay(page, min_ms=800, max_ms=2500):
     """Wait a random duration to appear more human-like."""
     delay = random.randint(min_ms, max_ms)
     page.wait_for_timeout(delay)
 
-
 def _ensure_field_enabled_and_fill(page, label_text, value, timeout=5000):
-    """
-    Robustly locates the input by isolating the exact UI block.
-    Uses negative filters to prevent Playwright from accidentally matching the entire form.
-    """
-    # 1. Target the literal text label for clicking (e.g., "Take profit")
+    """Robustly locates the input by isolating the exact UI block."""
     label_locator = page.get_by_text(label_text, exact=True).first
 
-    # 2. Strict Container Locator:
-    # - Must contain the label ("Take profit")
-    # - Must contain the exact text "Pips" (proves it is expanded)
-    # - MUST NOT contain "Quantity" or "Place order" (prevents bubbling up to the main form)
     section_container = page.locator("div").filter(
         has=page.get_by_text(label_text, exact=True)
     ).filter(
@@ -28,26 +20,19 @@ def _ensure_field_enabled_and_fill(page, label_text, value, timeout=5000):
         has_not_text="Place order"
     ).last
     
-    # The Pips input is always the first text input inside this specific isolated wrapper
     input_locator = section_container.locator("input[type='text']").first
 
-    # --- Attempt 1: Check if input is already visible and expanded ---
     try:
-        # Short wait to see if the isolated block resolves
         input_locator.wait_for(state="visible", timeout=1000)
-        
-        # If found, click it explicitly to move focus
         input_locator.click(timeout=1000)
         page.keyboard.press("Control+A")
         page.keyboard.press("Backspace")
         input_locator.fill(str(value))
-        
         print(f"  ✓ {label_text} field was already visible — filled Pips with {value}")
         return True
     except Exception:
         print(f"  ⏳ {label_text} field hidden — clicking text label to enable...")
 
-    # --- Attempt 2: Click the label text to toggle the field on ---
     try:
         label_locator.wait_for(state="visible", timeout=timeout)
         label_locator.click()
@@ -56,99 +41,159 @@ def _ensure_field_enabled_and_fill(page, label_text, value, timeout=5000):
         print(f"  ✗ Could not find or click '{label_text}' label: {e}")
         return False
 
-    # Brief human-like pause while the DOM renders the new input fields
     random_delay(page, 400, 800)
 
-    # --- Attempt 3: Wait explicitly for the input to mount in the DOM ---
     try:
-        # Now that it's expanded, the section_container will successfully resolve
         input_locator.wait_for(state="visible", timeout=timeout)
-        
-        # Explicit click ensures focus is on THIS input
         input_locator.click(timeout=1000)
         page.keyboard.press("Control+A")
         page.keyboard.press("Backspace")
         input_locator.fill(str(value))
-        
         print(f"  ✓ {label_text} field appeared after toggle — filled Pips with {value}")
         return True
     except Exception as e:
         print(f"  ✗ {label_text} input did not become visible after toggle: {e}")
         return False
 
-
 def input_order(page, purchase_type, order_amount, symbol, take_profit, stop_loss):
-    """
-    Fills in the order form fields: symbol, purchase type (buy/sell),
-    order amount, take profit, and stop loss.
-    """
+    """Fills in the order form fields using Geometric Layout Anchoring."""
     try:
         print(f"Inputting order: {purchase_type} {order_amount} {symbol} TP:{take_profit} SL:{stop_loss}")
+        
+        # --- 0. OBLITERATE THE ACCOUNT MENU ---
+        print("Ensuring account menu and overlays are closed...")
+        # Click the safe, blank app header bar at the top (X=500, Y=15) to forcefully remove focus from the menu
+        page.mouse.click(500, 15)
+        page.wait_for_timeout(300)
+        page.keyboard.press("Escape")
+        page.wait_for_timeout(500)
 
-        random_delay(page, 500, 1500)
+        # --- 1. FIND THE GEOMETRIC ANCHOR (THE SELL BUTTON) ---
+        try:
+            anchor_btn = page.get_by_text(re.compile(r"^Sell\s*\d", re.IGNORECASE)).first
+            anchor_btn.wait_for(state="visible", timeout=5000)
+            anchor_box = anchor_btn.bounding_box()
+            if not anchor_box:
+                raise Exception("Anchor button has no physical dimensions.")
+        except Exception as e:
+            print("  ✗ Critical: Could not locate the New Order panel anchor (Sell button).")
+            return False
 
-        # 1. Search and select the symbol
-        symbol_input = page.locator('input[placeholder="Search"]').first
-        if symbol_input.is_visible():
-            symbol_input.fill(symbol)
-            print(f"Searched for symbol: {symbol}")
-            random_delay(page, 1000, 2000)
+        # --- 2. SEARCH AND SELECT THE SYMBOL ---
+        try:
+            print(f"Attempting to switch symbol to: {symbol}")
+            dropdown_trigger = None
+            dropdown_box = None
+            
+            # Instantly grab all dropdown elements on the page without waiting
+            for el in page.locator('div[tabindex="1"]').all():
+                if el.is_visible():
+                    box = el.bounding_box()
+                    # MATH: Is it physically ABOVE the Sell button, and inside the right-hand panel?
+                    if box and box['y'] < anchor_box['y'] and abs(box['x'] - anchor_box['x']) < 250:
+                        # Grab the one closest to the Sell button
+                        if dropdown_box is None or box['y'] > dropdown_box['y']:
+                            dropdown_trigger = el
+                            dropdown_box = box
+            
+            if dropdown_trigger:
+                dropdown_trigger.click(force=True)
+                print("  ✓ Opened symbol dropdown menu via Geometric Layout")
+            else:
+                print("  ⏳ Geometric logic missed. Using Visual Fallback (DoM tab offset)...")
+                # Fallback: Find the "DoM" tab and click 40 pixels directly beneath it
+                dom_tab = page.get_by_text("DoM", exact=True).first
+                db = dom_tab.bounding_box()
+                page.mouse.click(db['x'] + 10, db['y'] + 40)
+                print("  ✓ Clicked dropdown area using Visual Fallback")
 
-            # Click the symbol from search results
-            symbol_result = page.locator(f'.symbol-name:has-text("{symbol}")').first
-            if not symbol_result.is_visible():
-                symbol_result = page.locator(f'text="{symbol}"').first
+            random_delay(page, 500, 1000)
 
-            if symbol_result.is_visible():
-                symbol_result.click()
-                print(f"Selected symbol: {symbol}")
+            # Blind type the symbol into the auto-focused search box
+            page.keyboard.type(symbol, delay=150)
+            print(f"  ✓ Typed '{symbol}' into search")
+            
+            random_delay(page, 1000, 1500)
 
-        random_delay(page, 500, 1200)
+            # Select the exact text match from the dropdown list
+            search_result = page.get_by_text(symbol, exact=True).last
+            search_result.wait_for(state="visible", timeout=5000)
+            search_result.click(force=True)
+            print(f"  ✓ Successfully clicked and selected: {symbol}")
+            
+        except Exception as e:
+            print(f"  ✗ Failed to change symbol to {symbol}. Error: {e}")
+            return False 
+            
+        # Give React time to re-render the Buy/Sell prices for the new symbol
+        random_delay(page, 1000, 1500)
 
-        # 2. Select buy or sell
-        if purchase_type.lower() == "buy":
-            buy_button = page.locator('button.buy:has-text("Buy"), button:has-text("Buy")').first
-            if buy_button.is_visible():
-                buy_button.click()
-                print("Selected: Buy")
-        elif purchase_type.lower() == "sell":
-            sell_button = page.locator('button.sell:has-text("Sell"), button:has-text("Sell")').first
-            if sell_button.is_visible():
-                sell_button.click()
-                print("Selected: Sell")
+        # --- 3. SELECT BUY OR SELL ---
+        try:
+            target_action = purchase_type.lower()
+            if target_action == "buy":
+                buy_btn = page.get_by_text(re.compile(r"^Buy\s*\d", re.IGNORECASE)).first
+                buy_btn.wait_for(state="visible", timeout=5000)
+                buy_btn.click()
+                print("  ✓ Selected direction: Buy")
+            elif target_action == "sell":
+                sell_btn = page.get_by_text(re.compile(r"^Sell\s*\d", re.IGNORECASE)).first
+                sell_btn.wait_for(state="visible", timeout=5000)
+                sell_btn.click()
+                print("  ✓ Selected direction: Sell")
+            else:
+                print(f"  ✗ Invalid purchase_type provided: {purchase_type}")
+                return False
+        except Exception as e:
+            print(f"  ✗ Failed to select {purchase_type} direction. Error: {e}")
+            return False
 
         random_delay(page, 400, 1000)
 
-        # 3. Fill in the order amount/volume
-        amount_input = page.locator('input[type="text"]').nth(1)
-        quantity_input = page.locator('div:has-text("Quantity") + div input, .quantity-input input').first
-        if quantity_input.is_visible():
-            amount_input = quantity_input
+        # --- 4. FILL IN THE ORDER AMOUNT ---
+        try:
+            amount_input = page.locator('input[type="text"]').nth(1)
+            quantity_input = page.locator('div:has-text("Quantity") + div input, .quantity-input input').first
+            if quantity_input.is_visible():
+                amount_input = quantity_input
 
-        if amount_input.is_visible():
-            amount_input.click()
-            page.keyboard.press("Control+A")
-            page.keyboard.press("Backspace")
-            amount_input.fill(str(order_amount))
-            print(f"Entered order amount: {order_amount}")
+            if amount_input.is_visible():
+                amount_input.click()
+                page.keyboard.press("Control+A")
+                page.keyboard.press("Backspace")
+                amount_input.fill(str(order_amount))
+                print(f"  ✓ Entered order amount: {order_amount}")
+        except Exception as e:
+            print(f"  ✗ Failed to enter quantity: {e}")
 
         random_delay(page, 400, 1000)
 
-        # 4. Fill in take profit
+        # --- 5. FILL IN TAKE PROFIT & STOP LOSS ---
         if take_profit:
             print("Handling Take Profit...")
             _ensure_field_enabled_and_fill(page, "Take profit", take_profit)
 
         random_delay(page, 400, 1000)
 
-        # 5. Fill in stop loss
         if stop_loss:
             print("Handling Stop Loss...")
             _ensure_field_enabled_and_fill(page, "Stop loss", stop_loss)
 
-        random_delay(page, 300, 800)
-        print("Order input complete.")
+        random_delay(page, 500, 1000)
+        
+        # --- 6. CLICK PLACE ORDER ---
+        try:
+            place_order_btn = page.get_by_text("Place order", exact=True).last
+            place_order_btn.wait_for(state="visible", timeout=3000)
+            place_order_btn.click(force=True)
+            print("  ✓ Clicked 'Place order' button")
+        except Exception as e:
+            print(f"  ✗ Failed to click Place order button: {e}")
+            return False
+
+        print("Order input sequence complete.")
         return True
+        
     except Exception as e:
-        print(f"Error during order input: {str(e)}")
+        print(f"Critical error during order input: {str(e)}")
         return False
