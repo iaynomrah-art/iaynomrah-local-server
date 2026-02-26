@@ -62,7 +62,7 @@ def input_order(page, purchase_type, order_amount, symbol, take_profit, stop_los
         
         # --- 0. OBLITERATE THE ACCOUNT MENU ---
         print("Ensuring account menu and overlays are closed...")
-        # Click the safe, blank app header bar at the top (X=500, Y=15) to forcefully remove focus from the menu
+        # Click the safe, blank app header bar at the top (X=500, Y=15)
         page.mouse.click(500, 15)
         page.wait_for_timeout(300)
         page.keyboard.press("Escape")
@@ -91,7 +91,6 @@ def input_order(page, purchase_type, order_amount, symbol, take_profit, stop_los
                     box = el.bounding_box()
                     # MATH: Is it physically ABOVE the Sell button, and inside the right-hand panel?
                     if box and box['y'] < anchor_box['y'] and abs(box['x'] - anchor_box['x']) < 250:
-                        # Grab the one closest to the Sell button
                         if dropdown_box is None or box['y'] > dropdown_box['y']:
                             dropdown_trigger = el
                             dropdown_box = box
@@ -101,7 +100,6 @@ def input_order(page, purchase_type, order_amount, symbol, take_profit, stop_los
                 print("  ✓ Opened symbol dropdown menu via Geometric Layout")
             else:
                 print("  ⏳ Geometric logic missed. Using Visual Fallback (DoM tab offset)...")
-                # Fallback: Find the "DoM" tab and click 40 pixels directly beneath it
                 dom_tab = page.get_by_text("DoM", exact=True).first
                 db = dom_tab.bounding_box()
                 page.mouse.click(db['x'] + 10, db['y'] + 40)
@@ -109,9 +107,14 @@ def input_order(page, purchase_type, order_amount, symbol, take_profit, stop_los
 
             random_delay(page, 500, 1000)
 
-            # Blind type the symbol into the auto-focused search box
+            # --- NEW FIX: Clear the existing text before typing ---
+            page.keyboard.press("Control+A")
+            page.keyboard.press("Backspace")
+            page.wait_for_timeout(200)
+
+            # Blind type the symbol into the cleared, auto-focused search box
             page.keyboard.type(symbol, delay=150)
-            print(f"  ✓ Typed '{symbol}' into search")
+            print(f"  ✓ Cleared input and typed '{symbol}' into search")
             
             random_delay(page, 1000, 1500)
 
