@@ -284,26 +284,41 @@ def run(
             check_user(page, username, account_id)
 
             # 6. Route to the correct operation
-            success = False
+            result = None
             match operation:
                 case "place-order":
-                    success = place_order_click(page)
+                    result = place_order_click(page)
                 case "auto-place-order":
-                    success = full_place_order(page, purchase_type, order_amount, symbol, take_profit, stop_loss)
+                    result = full_place_order(page, purchase_type, order_amount, symbol, take_profit, stop_loss)
                 case "edit-place-order":
-                    success = edit_place_order(page, purchase_type, order_amount, symbol, take_profit, stop_loss)
+                    result = edit_place_order(page, purchase_type, order_amount, symbol, take_profit, stop_loss)
                 case "input-order":
-                    success = input_order(page, purchase_type, order_amount, symbol, take_profit, stop_loss)
+                    result = input_order(page, purchase_type, order_amount, symbol, take_profit, stop_loss)
                 case "default" | "1" | _:
                     print(f"Operation: {operation} (Default). Running input_order...")
-                    success = input_order(page, purchase_type, order_amount, symbol, take_profit, stop_loss)
+                    result = input_order(page, purchase_type, order_amount, symbol, take_profit, stop_loss)
+
+            # Normalize result to dict format
+            if isinstance(result, bool):
+                success = result
+                reason = None
+                warning = None
+            elif isinstance(result, dict):
+                success = result.get("success", False)
+                reason = result.get("reason")
+                warning = result.get("warning")
+            else:
+                success = False
+                reason = "Unknown result format"
+                warning = None
 
             if not success:
-                print(f"WARNING: Operation '{operation}' did not return a confirmed success status.")
+                fail_reason = reason or f"Operation '{operation}' did not return a confirmed success status."
+                print(f"WARNING: {fail_reason}")
 
-            return {
-                "status": "success",
-                "message": f"cTrader automation completed for {symbol} ({operation})",
+            response = {
+                "status": "success" if success else "failed",
+                "message": f"cTrader automation completed for {symbol} ({operation})" if success else fail_reason,
                 "confirmed": success,
                 "details": {
                     "account_id": account_id,
@@ -315,6 +330,14 @@ def run(
                     "stop_loss": stop_loss,
                 }
             }
+
+            if reason:
+                response["reason"] = reason
+            if warning:
+                response["warning"] = warning
+
+            return response
+
 
         except Exception as e:
             msg = str(e)

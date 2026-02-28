@@ -184,19 +184,72 @@ def input_order(page, purchase_type, order_amount, symbol, take_profit, stop_los
 
         random_delay(page, 500, 1000)
         
-        # --- 6. CLICK PLACE ORDER ---
+        # --- 6. CHECK FOR WARNINGS & CLICK PLACE ORDER ---
+        warning_text = None
+        try:
+            # Look specifically for the red warning banner below the Place Order button
+            # Be precise to avoid matching unrelated text like "Buy margin: -264.04"
+            warning_el = page.locator(':text("The market is closed"), :text("Only pending orders are accepted"), :text("not available for trading"), :text("Insufficient funds")').first
+            if warning_el.is_visible(timeout=1500):
+                warning_text = warning_el.inner_text().strip()
+                print(f"  ⚠ Warning detected: {warning_text}")
+        except Exception:
+            pass  # No warning found, proceed normally
+
         try:
             place_order_btn = page.get_by_text("Place order", exact=True).last
             place_order_btn.wait_for(state="visible", timeout=3000)
-            place_order_btn.click(force=True)
+            
+            # Check if the button is disabled using multiple methods
+            # cTrader uses custom UI, so standard is_disabled() may not work
+            is_disabled = False
+            try:
+                is_disabled = place_order_btn.is_disabled()
+            except Exception:
+                pass
+            
+            if not is_disabled:
+                # Check via CSS / attributes that cTrader might use
+                try:
+                    btn_classes = place_order_btn.get_attribute("class") or ""
+                    opacity = place_order_btn.evaluate("el => getComputedStyle(el).opacity")
+                    pointer_events = place_order_btn.evaluate("el => getComputedStyle(el).pointerEvents")
+                    aria_disabled = place_order_btn.get_attribute("aria-disabled")
+                    
+                    if ("disabled" in btn_classes.lower() or 
+                        opacity == "0.5" or float(opacity or "1") < 0.7 or
+                        pointer_events == "none" or
+                        aria_disabled == "true"):
+                        is_disabled = True
+                        print(f"  ℹ Detected disabled via CSS/attrs (class={btn_classes}, opacity={opacity}, pointer-events={pointer_events})")
+                except Exception:
+                    pass
+            
+            # If we detected a warning, treat button as disabled regardless
+            if warning_text and ("market is closed" in warning_text.lower() or "not available" in warning_text.lower()):
+                is_disabled = True
+
+            if is_disabled:
+                reason = warning_text or "Place order button is disabled (unknown reason)"
+                print(f"  ✗ Place order button is DISABLED. Reason: {reason}")
+                return {"success": False, "reason": reason, "warning": warning_text}
+            
+            # Use non-forced click so Playwright respects actionability
+            place_order_btn.click(timeout=5000)
             print("  ✓ Clicked 'Place order' button")
         except Exception as e:
+            err_msg = str(e)
+            # If click timed out, the button was likely disabled
+            if "timeout" in err_msg.lower() or "not enabled" in err_msg.lower():
+                reason = warning_text or "Place order button could not be clicked (likely disabled)"
+                print(f"  ✗ Place order button click failed (disabled): {reason}")
+                return {"success": False, "reason": reason, "warning": warning_text}
             print(f"  ✗ Failed to click Place order button: {e}")
-            return False
+            return {"success": False, "reason": f"Failed to click Place order button: {e}", "warning": warning_text}
 
         print("Order input sequence complete.")
-        return True
+        return {"success": True, "reason": None, "warning": warning_text}
         
     except Exception as e:
         print(f"Critical error during order input: {str(e)}")
-        return False
+        return {"success": False, "reason": str(e), "warning": None}
