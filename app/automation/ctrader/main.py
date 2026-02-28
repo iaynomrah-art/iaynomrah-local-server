@@ -1,4 +1,5 @@
 import importlib
+import json
 import os
 import threading
 from pathlib import Path
@@ -62,6 +63,9 @@ def get_user_context(username: str):
     profile_dir = base_dir / "ctrader_profile" / username
     profile_dir.mkdir(parents=True, exist_ok=True)
     
+    # Patch Chrome preferences to prevent "Restore pages?" dialog
+    _fix_chrome_exit_type(profile_dir)
+    
     print(f"Launching persistent context for {username} at {profile_dir}...")
     
     context = pw.chromium.launch_persistent_context(
@@ -69,13 +73,21 @@ def get_user_context(username: str):
         channel="chrome",
         headless=False,  # Set to True for production server
         args=[
+            "--no-zygote",
+            "--disable-gpu",
+            "--disable-infobars",
+            "--no-default-browser-check",
+            "--no-first-run",
+            "--disable-extensions",
+            "--disable-session-crashed-bubble",
+            "--disable-features=OptimizationGuideModelDownloading,OptimizationHintsFetching,OptimizationTargetPrediction,OptimizationHints",
+            "--force-fieldtrials=SiteIsolationExtensions/Control",
+            "--hide-scrollbars",
+            "--mute-audio",
             "--no-sandbox",
             "--disable-setuid-sandbox",
             "--disable-dev-shm-usage",
-            "--disable-accelerated-2d-canvas",
-            "--no-first-run",
-            "--no-zygote",
-            "--disable-gpu"
+            "--disable-accelerated-2d-canvas"
         ]
     )
     
@@ -86,18 +98,68 @@ def get_user_context(username: str):
     return context
 
 
+def _fix_chrome_exit_type(profile_dir):
+    """
+    Patches Chrome's Preferences and Secure Preferences files to mark the
+    last session as cleanly exited, preventing the 'Restore pages?' dialog.
+    Also deletes session restore files so Chrome has nothing to restore.
+    """
+    default_dir = Path(profile_dir) / "Default"
+
+    # --- Step 1: Patch preferences to mark clean exit ---
+    for pref_file_name in ["Preferences", "Secure Preferences"]:
+        pref_file = default_dir / pref_file_name
+        if pref_file.exists():
+            try:
+                data = json.loads(pref_file.read_text(encoding="utf-8"))
+                if "profile" not in data:
+                    data["profile"] = {}
+                data["profile"]["exit_type"] = "Normal"
+                data["profile"]["exited_cleanly"] = True
+                pref_file.write_text(json.dumps(data, indent=2), encoding="utf-8")
+                print(f"  ✓ Patched {pref_file_name}: exit_type=Normal, exited_cleanly=True")
+            except Exception as e:
+                print(f"  ⚠ Could not patch {pref_file_name}: {e}")
+
+    # --- Step 2: Delete session restore files ---
+    import shutil
+    session_files = [
+        "Current Session", "Current Tabs",
+        "Last Session", "Last Tabs",
+    ]
+    for fname in session_files:
+        fpath = default_dir / fname
+        if fpath.exists():
+            try:
+                fpath.unlink()
+                print(f"  ✓ Deleted session file: {fname}")
+            except Exception as e:
+                print(f"  ⚠ Could not delete {fname}: {e}")
+
+    # Delete Session Storage directory
+    session_storage_dir = default_dir / "Session Storage"
+    if session_storage_dir.exists():
+        try:
+            shutil.rmtree(session_storage_dir, ignore_errors=True)
+            print("  ✓ Deleted Session Storage directory")
+        except Exception as e:
+            print(f"  ⚠ Could not delete Session Storage: {e}")
+
+
 def ensure_ctrader_loaded(page, url="https://app.ctrader.com"):
     """
     Navigates to cTrader and aggressively forces reloads if the SPA framework hangs.
+    Uses generous timeouts on cold start since the SPA can take a while to hydrate.
     """
     print(f"Navigating to {url}...")
     
     # --- ATTEMPT 1: Standard Navigation ---
     try:
-        page.goto(url, wait_until="domcontentloaded", timeout=45000)
+        page.goto(url, wait_until="domcontentloaded", timeout=60000)
         print("Waiting for cTrader to render (checking for Login screen or Workspace)...")
-        indicator = page.locator('button[type="button"]:has-text("Log in"), text="Positions"').first
-        indicator.wait_for(state="visible", timeout=15000)
+        # Use a broad selector: login button OR any sign of the trading workspace
+        indicator = page.locator('button:has-text("Log in"), :text("Positions"), :text("Orders")')
+        indicator.first.wait_for(state="visible", timeout=30000)
         print("  ✓ cTrader UI loaded successfully on the first try.")
         return True
     except Exception:
@@ -105,9 +167,9 @@ def ensure_ctrader_loaded(page, url="https://app.ctrader.com"):
 
     # --- ATTEMPT 2: Playwright API Reload ---
     try:
-        page.reload(wait_until="domcontentloaded", timeout=30000)
-        indicator = page.locator('button[type="button"]:has-text("Log in"), text="Positions"').first
-        indicator.wait_for(state="visible", timeout=15000)
+        page.reload(wait_until="domcontentloaded", timeout=45000)
+        indicator = page.locator('button:has-text("Log in"), :text("Positions"), :text("Orders")')
+        indicator.first.wait_for(state="visible", timeout=30000)
         print("  ✓ cTrader UI loaded successfully after API reload.")
         return True
     except Exception:
@@ -123,13 +185,14 @@ def ensure_ctrader_loaded(page, url="https://app.ctrader.com"):
         page.keyboard.press("Control+Shift+R")
         
         # Because we bypassed Playwright's navigation logic, we just wait for the element to appear
-        indicator = page.locator('button[type="button"]:has-text("Log in"), text="Positions"').first
-        indicator.wait_for(state="visible", timeout=25000)
+        indicator = page.locator('button:has-text("Log in"), :text("Positions"), :text("Orders")')
+        indicator.first.wait_for(state="visible", timeout=40000)
         print("  ✓ cTrader UI loaded successfully after Ctrl+Shift+R force reload.")
         return True
     except Exception as e:
         print(f"  ✗ Critical failure: cTrader completely failed to render. Error: {e}")
         return False
+
 
 def run(
     username: str,
@@ -200,7 +263,7 @@ def run(
 
             # 4. Check login status
             # If we are in a persistent context, we might already be logged in
-            login_button = page.locator('button[type="button"]:has-text("Log in")')
+            login_button = page.locator('button:has-text("Log in")')
             
             try:
                 # Wait briefly to see if login button appears (meaning we are NOT logged in)
