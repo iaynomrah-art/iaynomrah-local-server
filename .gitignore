@@ -3,3 +3,4 @@ __pycache__
 db.sql
 cloudflared_error.log
 clouflared.log
+ctrader_profile
