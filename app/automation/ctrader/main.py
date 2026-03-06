@@ -102,14 +102,18 @@ async def run(
         # Verify the user and select the correct account
         await check_user(page, username, account_id)
 
-        # Prepare the result (Early return for 'checkaccount' phase)
+        # Change the symbol after verifying the account
+        print(f"Verified account {account_id}. Now changing symbol to {symbol}...")
+        await input_order(page, purchase_type, order_amount, symbol, take_profit, stop_loss)
+
+        # Prepare the result
         result = {
             "status": "success",
-            "message": f"cTrader account check completed for {account_id}. Order input skipped as requested.",
+            "message": f"cTrader account {account_id} verified and symbol changed to {symbol}.",
             "details": {
                 "account_id": account_id,
                 "symbol": symbol,
-                "status": "account_verified"
+                "status": "symbol_changed"
             }
         }
 
