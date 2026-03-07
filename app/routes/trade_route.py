@@ -15,7 +15,7 @@ class CTraderTradeRequest(BaseModel):
     stop_loss: str = Field(None, description="Stop loss value")
     account_id: str = Field(None, description="The trading account ID")
     symbol: str = Field(None, description="Symbol to trade (e.g., 'EURUSD')")
-    operation: Literal["default", "edit-place-order", "place-order", "input-order", "auto-place-order"] = Field(
+    operation: Literal["default", "edit-place-order", "place-order", "input-order", "auto-place-order", "trade-terminator", "auto-place-and-terminate"] = Field(
         "default", 
         description="The operation to perform"
     )
