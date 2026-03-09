@@ -25,6 +25,11 @@ app.include_router(dashboard_router, prefix="/api/v1")
 app.include_router(runner_router, prefix="/api/v1")
 app.include_router(trade_router, prefix="/api/v1")
 
+@app.get("/api/health")
+async def health_check():
+    """Health check endpoint."""
+    return {"message": "Server is running", "env": os.getenv("ENV", "unknown")}
+
 @app.get("/")
 async def health_check():
     """Health check endpoint."""
@@ -32,4 +37,4 @@ async def health_check():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("app.main:app", host="0.0.0.0", port=2026, reload=True)
+    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)

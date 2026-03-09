@@ -1,12 +1,11 @@
 # Navigate to project directory
-Set-Location "C:\Users\Admin\Desktop\Code\iaynomrah-local-server\"
+Set-Location "C:\Users\Admin\code\iaynomrah-local-server\"
 
 # Define paths
 $logPath = ".\cloudflared.log"
 $errorLogPath = ".\cloudflared_error.log"
 $envPath = ".\.env"
-$rootPath = "C:\Users\Admin\Desktop\Code\iaynomrah-local-server\"
-$frontendPath = "$rootPath\frontend"
+$rootPath = "C:\Users\Admin\code\iaynomrah-local-server\"
 
 $skipSetup = $false
 while ($true) {
@@ -35,33 +34,6 @@ while ($true) {
             continue
         }
     }
-
-    # Ask about frontend build
-    $doBuild = Read-Host "Build frontend? (y/n)"
-    if ($doBuild -eq "y") {
-        Write-Output "Installing frontend dependencies..."
-        Set-Location $frontendPath
-        npm i
-        if ($LASTEXITCODE -ne 0) {
-            Write-Output "npm install failed."
-            Set-Location $rootPath
-            Read-Host "Press Enter to try again or Ctrl+C to exit"
-            continue
-        }
-
-        Write-Output "Building frontend..."
-        npm run build
-        if ($LASTEXITCODE -ne 0) {
-            Write-Output "Frontend build failed."
-            Set-Location $rootPath
-            Read-Host "Press Enter to try again or Ctrl+C to exit"
-            continue
-        }
-
-        # Return to root
-        Set-Location $rootPath
-        Write-Output "Frontend build complete."
-    }
 }
 $skipSetup = $false
 
@@ -71,7 +43,7 @@ $skipSetup = $false
 
     # Start cloudflared
     Write-Output "Starting Cloudflare tunnel..."
-    Start-Process cloudflared -ArgumentList "tunnel --url http://localhost:2026 --no-autoupdate" `
+    Start-Process cloudflared -ArgumentList "tunnel --url http://localhost:8000 --no-autoupdate" `
         -RedirectStandardOutput $logPath `
         -RedirectStandardError $errorLogPath `
         -NoNewWindow
@@ -128,7 +100,7 @@ $skipSetup = $false
     .\.venv\Scripts\Activate.ps1
     try {
         Write-Output "Starting server..."
-        uvicorn app.main:app --host 0.0.0.0 --port 2026 --reload
+        uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     } finally {
         Write-Output "Shutting down cloudflared..."
         Stop-Process -Name "cloudflared" -ErrorAction SilentlyContinue

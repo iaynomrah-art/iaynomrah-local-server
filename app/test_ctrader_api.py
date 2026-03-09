@@ -1,7 +1,7 @@
 import requests
 import json
 
-BASE_URL = "http://localhost:2026/api/v1"
+BASE_URL = "http://localhost:8000/api/v1"
 
 def test_credentials_endpoint():
     print("Testing /trade/credentials...")
