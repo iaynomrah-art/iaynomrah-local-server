@@ -26,7 +26,6 @@ async def register_unit():
             
             unit_data = {
                 "guid": guid,
-                "unit_name": hostname,
                 "franchise_id": os.getenv("FRANCHISE_ID"),
                 "api_base_url": os.getenv("API_BASE_URL"),
                 "status": "enabled"
