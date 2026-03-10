@@ -46,6 +46,12 @@ python -m venv venv
 
 # Install requirements
 pip install -r requirements.txt
+
+#run the tunnel
+cloudflared tunnel --url http://localhost:8000
+
+# Run the server
+uvicorn app.main:app --port 8000 --reload
 ```
 
 ---
@@ -61,11 +67,17 @@ The simplest way — just open PowerShell and run:
 1. Press `Win + R`, type `shell:startup`, and press **Enter**.
 2. Right-click inside the folder and select **New > Shortcut**.
 3. In the location box, paste the following (adjust the path if moved):
+
    ```powershell
    powershell.exe -WindowStyle Hidden -ExecutionPolicy Bypass -File "C:\Users\Admin\Desktop\Code\iaynomrah-local-server\script.ps1"
    ```
+
    powershell.exe -ExecutionPolicy Bypass -File "C:\Users\Admin\Documents\code\iaynomrah-local-server\scipt.ps1"
+
    ```
+
+   ```
+
 4. Name it `Harmony Server` and click **Finish**.
 
 ### Option 7: Package as Executable (.exe)
