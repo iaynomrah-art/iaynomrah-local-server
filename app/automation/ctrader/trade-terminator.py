@@ -98,7 +98,12 @@ def terminate_trade(page, symbol: str, account_id: str = None, db_account_id: st
         supabase = get_supabase()
         paired_record_id = None
         is_primary = None
-        db_account_id = None  # The resolved DB hex ID
+        
+        # If db_account_id wasn't passed in, try to resolve it from the platform account_id
+        if not db_account_id and account_id:
+            db_account_id = _resolve_db_account_id(supabase, account_id)
+            if db_account_id:
+                print(f"🔑 Resolved DB account ID '{db_account_id}' from platform ID '{account_id}'")
         
         if db_account_id:
             try:
