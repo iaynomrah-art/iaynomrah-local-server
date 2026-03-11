@@ -123,8 +123,8 @@ def terminate_trade(page, symbol: str, account_id: str = None, db_account_id: st
 
         # 2. Poll for balance changes AND database signals
         while True:
-            # Wait 2 seconds between checks
-            page.wait_for_timeout(2000)
+            # Wait 200ms between checks for near-instant reaction
+            page.wait_for_timeout(200)
             
             # --- Check Database Signal ---
             if paired_record_id:
