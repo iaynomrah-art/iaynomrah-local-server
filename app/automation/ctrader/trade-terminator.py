@@ -19,18 +19,20 @@ def _resolve_db_account_id(supabase, platform_id: str) -> str:
             .execute()
         
         if res.data and len(res.data) > 0:
-            # Navigate the nested results to find the trading_account ID
-            pkgs = res.data[0].get("package", [])
-            pkg = pkgs[0] if isinstance(pkgs, list) and pkgs else pkgs
-            if pkg:
-                f_accs = pkg.get("funder_account", [])
-                # funder_account might be a list or a single object depending on schema/query
-                f_acc = f_accs[0] if isinstance(f_accs, list) and f_accs else f_accs
-                if f_acc:
-                    t_accs = f_acc.get("trading_accounts", [])
-                    t_acc = t_accs[0] if isinstance(t_accs, list) and t_accs else t_accs
-                    if t_acc:
-                        return t_acc.get("id")
+            # A single platform_id might have multiple credential rows, some of which 
+            # might not have a full package -> funder_account -> trading_accounts chain.
+            # We iterate through all of them to find the first valid trading account ID.
+            for row in res.data:
+                pkgs = row.get("package", [])
+                pkg = pkgs[0] if isinstance(pkgs, list) and pkgs else pkgs
+                if pkg:
+                    f_accs = pkg.get("funder_account", [])
+                    f_acc = f_accs[0] if isinstance(f_accs, list) and f_accs else f_accs
+                    if f_acc:
+                        t_accs = f_acc.get("trading_accounts", [])
+                        t_acc = t_accs[0] if isinstance(t_accs, list) and t_accs else t_accs
+                        if t_acc:
+                            return t_acc.get("id")
         return None
     except Exception as e:
         print(f"  ⚠ Error resolving DB account ID: {e}")
