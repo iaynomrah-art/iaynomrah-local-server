@@ -6,6 +6,36 @@ from app.core.supabase import get_supabase
 close_position_module = importlib.import_module("app.automation.ctrader.close-position")
 close_position = close_position_module.close_position
 
+def _resolve_db_account_id(supabase, platform_id: str) -> str:
+    """
+    Resolves a cTrader numeric platform_id (e.g. '5752716') to its 
+    corresponding database hex ID in the 'trading_accounts' table.
+    """
+    try:
+        # Chain: credentials.platform_id -> package.credential_id -> funder_account.package_id -> trading_accounts.funder_account_id
+        res = supabase.table("credentials") \
+            .select("id, package(id, funder_account(id, trading_accounts(id)))") \
+            .eq("platform_id", platform_id) \
+            .execute()
+        
+        if res.data and len(res.data) > 0:
+            # Navigate the nested results to find the trading_account ID
+            pkgs = res.data[0].get("package", [])
+            pkg = pkgs[0] if isinstance(pkgs, list) and pkgs else pkgs
+            if pkg:
+                f_accs = pkg.get("funder_account", [])
+                # funder_account might be a list or a single object depending on schema/query
+                f_acc = f_accs[0] if isinstance(f_accs, list) and f_accs else f_accs
+                if f_acc:
+                    t_accs = f_acc.get("trading_accounts", [])
+                    t_acc = t_accs[0] if isinstance(t_accs, list) and t_accs else t_accs
+                    if t_acc:
+                        return t_acc.get("id")
+        return None
+    except Exception as e:
+        print(f"  ⚠ Error resolving DB account ID: {e}")
+        return None
+
 def terminate_trade(page, symbol: str, account_id: str = None):
     print(f"\n👀 Monitoring started for {symbol} on account {account_id}...")
 
@@ -66,16 +96,26 @@ def terminate_trade(page, symbol: str, account_id: str = None):
         supabase = get_supabase()
         paired_record_id = None
         is_primary = None
+        db_account_id = None  # The resolved DB hex ID
         
         if account_id:
             try:
-                # Find the pairing where this account is either primary or secondary
-                res = supabase.table("paired_trading_accounts").select("id, primary_account_id, secondary_account_id").or_(f"primary_account_id.eq.{account_id},secondary_account_id.eq.{account_id}").eq("is_active", True).execute()
-                if res.data and len(res.data) > 0:
-                    record = res.data[0]
-                    paired_record_id = record['id']
-                    is_primary = (record['primary_account_id'] == account_id)
-                    print(f"🔗 Paired trade detected. DB Record: {paired_record_id} (Is Primary: {is_primary})")
+                # Resolve cTrader platform_id -> trading_accounts DB hex ID
+                # Chain: credentials.platform_id -> package.credential_id -> funder_account.package_id -> trading_accounts.funder_account_id
+                db_account_id = _resolve_db_account_id(supabase, account_id)
+                
+                if db_account_id:
+                    print(f"🔑 Resolved platform ID '{account_id}' -> DB ID '{db_account_id}'")
+                    
+                    # Find the pairing where this account is either primary or secondary
+                    res = supabase.table("paired_trading_accounts").select("id, primary_account_id, secondary_account_id").or_(f"primary_account_id.eq.{db_account_id},secondary_account_id.eq.{db_account_id}").eq("is_active", True).execute()
+                    if res.data and len(res.data) > 0:
+                        record = res.data[0]
+                        paired_record_id = record['id']
+                        is_primary = (record['primary_account_id'] == db_account_id)
+                        print(f"🔗 Paired trade detected. DB Record: {paired_record_id} (Is Primary: {is_primary})")
+                else:
+                    print(f"  ⚠ Could not resolve platform ID '{account_id}' to a DB account ID")
             except Exception as e:
                 print(f"  ⚠ Failed to query paired account status: {e}")
 
@@ -93,7 +133,7 @@ def terminate_trade(page, symbol: str, account_id: str = None):
                         trigger = res.data[0].get("exit_triggered_by")
                         
                         # Only act if there is a signal AND we didn't trigger it ourselves
-                        if db_signal and trigger != account_id:
+                        if db_signal and trigger != db_account_id:
                             print(f"\n📡 RECEIVED EXIT SIGNAL FROM DB: {db_signal} (Triggered by {trigger})")
                             print("🔪 Executing 'close-position' to terminate paired trade...")
                             close_result = close_position(page, symbol)
@@ -101,7 +141,10 @@ def terminate_trade(page, symbol: str, account_id: str = None):
                             # Mark our termination status as completed
                             status_col = "primary_termination_status" if is_primary else "secondary_termination_status"
                             try:
-                                supabase.table("paired_trading_accounts").update({status_col: "completed"}).eq("id", paired_record_id).execute()
+                                supabase.table("paired_trading_accounts").update({
+                                    status_col: "completed",
+                                    "trade_status": "done"  # Set overall status to done
+                                }).eq("id", paired_record_id).execute()
                             except Exception:
                                 pass
                                 
@@ -138,7 +181,8 @@ def terminate_trade(page, symbol: str, account_id: str = None):
                 print(f"📢 Broadcasting {signal_type} to DB so partner device can close...")
                 supabase.table("paired_trading_accounts").update({
                     "exit_signal": signal_type,
-                    "exit_triggered_by": account_id
+                    "exit_triggered_by": db_account_id,  # Use resolved DB ID
+                    "trade_status": "done"               # Mark as done
                 }).eq("id", paired_record_id).execute()
             except Exception as e:
                 print(f"  ⚠ Failed to broadcast exit signal: {e}")
