@@ -41,6 +41,19 @@ def _resolve_db_account_id(supabase, platform_id: str) -> str:
 def terminate_trade(page, symbol: str, account_id: str = None, db_account_id: str = None):
     print(f"\n👀 Monitoring started for {symbol} on account {account_id} / DB {db_account_id}...")
 
+    def _update_paired_record(supabase, record_id, payload):
+        """Update a paired_trading_accounts record and log the full response so errors are visible."""
+        try:
+            res = supabase.table("paired_trading_accounts").update(payload).eq("id", record_id).execute()
+            if res.data:
+                print(f"  📝 DB update OK — {list(payload.keys())}")
+            else:
+                print(f"  ⚠ DB update returned no data — payload={payload} | response={res}")
+            return res
+        except Exception as e:
+            print(f"  ❌ DB update FAILED — payload={payload} | error={e}")
+            return None
+
     def parse_balance(text: str) -> float:
         # Strip out new lines to make it a single string
         text = text.replace('\n', ' ')
@@ -116,6 +129,11 @@ def terminate_trade(page, symbol: str, account_id: str = None, db_account_id: st
                     paired_record_id = record['id']
                     is_primary = (record['primary_account_id'] == db_account_id)
                     print(f"🔗 Paired trade detected. DB Record: {paired_record_id} (Is Primary: {is_primary})")
+                    
+                    # Write starting balance to DB immediately
+                    balance_col = "primary_starting_balance" if is_primary else "secondary_starting_balance"
+                    _update_paired_record(supabase, paired_record_id, {balance_col: initial_balance})
+                    print(f"💾 Saved starting balance {initial_balance} → {balance_col}")
             except Exception as e:
                 print(f"  ⚠ Failed to query paired account status: {e}")
         else:
@@ -136,21 +154,34 @@ def terminate_trade(page, symbol: str, account_id: str = None, db_account_id: st
                         
                         # Only act if there is a signal AND we didn't trigger it ourselves
                         if db_signal and trigger != db_account_id:
-                            print(f"\n📡 RECEIVED EXIT SIGNAL FROM DB: {db_signal} (Triggered by {trigger})")
+                            role = "PRIMARY" if is_primary else "SECONDARY"
+                            print(f"\n📡 [{role}] RECEIVED exit signal '{db_signal}' from partner (triggered by {trigger})")
+                            print(f"🤖 [{role}] This device is closing position via AUTOMATION (partner triggered)")
                             print("🔪 Executing 'close-position' to terminate paired trade...")
                             close_result = close_position(page, symbol)
                             
-                            # Mark our termination status as completed
-                            status_col = "primary_termination_status" if is_primary else "secondary_termination_status"
+                            # Read final balance after closing
                             try:
-                                supabase.table("paired_trading_accounts").update({
-                                    status_col: "completed",
-                                    "trade_status": "done"  # Set overall status to done
-                                }).eq("id", paired_record_id).execute()
+                                final_text = balance_locator.inner_text()
+                                final_balance_received = parse_balance(final_text)
+                                print(f"💾 Final balance after automation close: {final_balance_received}")
                             except Exception:
-                                pass
+                                final_balance_received = None
+                            
+                            # Write termination status + final balance + trade_status = done
+                            status_col = "primary_termination_status" if is_primary else "secondary_termination_status"
+                            balance_col = "primary_final_balance" if is_primary else "secondary_final_balance"
+                            update_payload = {
+                                status_col: "completed",
+                                "trade_status": "done",
+                                "is_active": False
+                            }
+                            if final_balance_received is not None:
+                                update_payload[balance_col] = final_balance_received
+                            _update_paired_record(supabase, paired_record_id, update_payload)
+                            print(f"✅ [{role}] Closed by AUTOMATION — trade_status=done, {status_col}=completed")
                                 
-                            return {"success": True, "reason": f"Closed via DB paired signal: {db_signal}", "warning": close_result.get("reason")}
+                            return {"success": True, "reason": f"[AUTOMATION] Closed via DB signal: {db_signal}", "warning": close_result.get("reason")}
                 except Exception as e:
                     print(f"  ⚠ DB Poll Error: {e}")
             
@@ -177,17 +208,21 @@ def terminate_trade(page, symbol: str, account_id: str = None, db_account_id: st
             signal_type = "pair_sl"
         print("-" * 40)
         
-        # --- Broadcast Exit Signal to Partner ---
+        # --- Broadcast Exit Signal + Write OWN termination status + final balance ---
+        role = "PRIMARY" if is_primary else "SECONDARY"
+        print(f"\n🚀 [{role}] This device TRIGGERED the close — broadcasting signal to partner...")
         if paired_record_id and signal_type:
-            try:
-                print(f"📢 Broadcasting {signal_type} to DB so partner device can close...")
-                supabase.table("paired_trading_accounts").update({
-                    "exit_signal": signal_type,
-                    "exit_triggered_by": db_account_id,  # Use resolved DB ID
-                    "trade_status": "done"               # Mark as done
-                }).eq("id", paired_record_id).execute()
-            except Exception as e:
-                print(f"  ⚠ Failed to broadcast exit signal: {e}")
+            status_col = "primary_termination_status" if is_primary else "secondary_termination_status"
+            balance_col = "primary_final_balance" if is_primary else "secondary_final_balance"
+            _update_paired_record(supabase, paired_record_id, {
+                "exit_signal": signal_type,
+                "exit_triggered_by": db_account_id,
+                "trade_status": "done",
+                "is_active": False,
+                status_col: "completed",
+                balance_col: final_balance
+            })
+            print(f"✅ [{role}] TRIGGERED close — exit_signal={signal_type}, {status_col}=completed, trade_status=done")
         
         return {"success": True, "reason": f"Trade closed. Result: {result}", "warning": None}
     
