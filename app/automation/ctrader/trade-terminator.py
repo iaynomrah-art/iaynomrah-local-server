@@ -38,8 +38,8 @@ def _resolve_db_account_id(supabase, platform_id: str) -> str:
         print(f"  ⚠ Error resolving DB account ID: {e}")
         return None
 
-def terminate_trade(page, symbol: str, account_id: str = None):
-    print(f"\n👀 Monitoring started for {symbol} on account {account_id}...")
+def terminate_trade(page, symbol: str, account_id: str = None, db_account_id: str = None):
+    print(f"\n👀 Monitoring started for {symbol} on account {account_id} / DB {db_account_id}...")
 
     def parse_balance(text: str) -> float:
         # Strip out new lines to make it a single string
@@ -100,14 +100,9 @@ def terminate_trade(page, symbol: str, account_id: str = None):
         is_primary = None
         db_account_id = None  # The resolved DB hex ID
         
-        if account_id:
+        if db_account_id:
             try:
-                # Resolve cTrader platform_id -> trading_accounts DB hex ID
-                # Chain: credentials.platform_id -> package.credential_id -> funder_account.package_id -> trading_accounts.funder_account_id
-                db_account_id = _resolve_db_account_id(supabase, account_id)
-                
-                if db_account_id:
-                    print(f"🔑 Resolved platform ID '{account_id}' -> DB ID '{db_account_id}'")
+                print(f"🔑 Using DB ID '{db_account_id}' directly from pairing session.")
                     
                     # Find the pairing where this account is either primary or secondary
                     res = supabase.table("paired_trading_accounts").select("id, primary_account_id, secondary_account_id").or_(f"primary_account_id.eq.{db_account_id},secondary_account_id.eq.{db_account_id}").eq("is_active", True).execute()

@@ -209,6 +209,7 @@ def run(
     take_profit: str = None,
     stop_loss: str = None,
     account_id: str = None,
+    db_account_id: str = None,
     symbol: str = None
 ):
     global _user_pages
@@ -309,7 +310,7 @@ def run(
                         
                     if is_success:
                         print("Order placed successfully! Handing over to trade-terminator...")
-                        result = terminate_trade(page, symbol, account_id)
+                        result = terminate_trade(page, symbol, account_id, db_account_id)
                     else:
                         print("Order placement failed, skipping terminator.")
                         result = place_result
@@ -326,7 +327,7 @@ def run(
                         
                     if is_success:
                         print("Order placed successfully! Handing over to trade-terminator...")
-                        result = terminate_trade(page, symbol, account_id)
+                        result = terminate_trade(page, symbol, account_id, db_account_id)
                     else:
                         print("Order placement failed, skipping terminator.")
                         result = place_result
@@ -335,7 +336,7 @@ def run(
                 case "input-order":
                     result = input_order(page, purchase_type, order_amount, symbol, take_profit, stop_loss)
                 case "trade-terminator":
-                    result = terminate_trade(page, symbol, account_id)
+                    result = terminate_trade(page, symbol, account_id, db_account_id)
                 case "close-position":
                     result = close_position(page, symbol)
                 case "default" | "1" | _:

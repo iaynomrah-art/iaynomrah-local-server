@@ -14,6 +14,7 @@ class CTraderTradeRequest(BaseModel):
     take_profit: str = Field(None, description="Take profit value")
     stop_loss: str = Field(None, description="Stop loss value")
     account_id: str = Field(None, description="The trading account ID")
+    db_account_id: str = Field(None, description="The unique database UUID/Hex ID of the trading account")
     symbol: str = Field(None, description="Symbol to trade (e.g., 'EURUSD')")
     operation: Literal["default", "edit-place-order", "place-order", "input-order", "auto-place-order", "trade-terminator", "auto-place-and-terminate", "place-and-terminate", "close-position"] = Field(
         "default", 
@@ -47,6 +48,7 @@ async def run_ctrader_automation(trade_data: CTraderTradeRequest):
             take_profit=trade_data.take_profit,
             stop_loss=trade_data.stop_loss,
             account_id=trade_data.account_id,
+            db_account_id=trade_data.db_account_id,
             symbol=trade_data.symbol,
             operation=trade_data.operation,
         )
