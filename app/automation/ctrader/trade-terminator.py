@@ -103,18 +103,18 @@ def terminate_trade(page, symbol: str, account_id: str = None, db_account_id: st
         if db_account_id:
             try:
                 print(f"🔑 Using DB ID '{db_account_id}' directly from pairing session.")
-                    
-                    # Find the pairing where this account is either primary or secondary
-                    res = supabase.table("paired_trading_accounts").select("id, primary_account_id, secondary_account_id").or_(f"primary_account_id.eq.{db_account_id},secondary_account_id.eq.{db_account_id}").eq("is_active", True).execute()
-                    if res.data and len(res.data) > 0:
-                        record = res.data[0]
-                        paired_record_id = record['id']
-                        is_primary = (record['primary_account_id'] == db_account_id)
-                        print(f"🔗 Paired trade detected. DB Record: {paired_record_id} (Is Primary: {is_primary})")
-                else:
-                    print(f"  ⚠ Could not resolve platform ID '{account_id}' to a DB account ID")
+                
+                # Find the pairing where this account is either primary or secondary
+                res = supabase.table("paired_trading_accounts").select("id, primary_account_id, secondary_account_id").or_(f"primary_account_id.eq.{db_account_id},secondary_account_id.eq.{db_account_id}").eq("is_active", True).execute()
+                if res.data and len(res.data) > 0:
+                    record = res.data[0]
+                    paired_record_id = record['id']
+                    is_primary = (record['primary_account_id'] == db_account_id)
+                    print(f"🔗 Paired trade detected. DB Record: {paired_record_id} (Is Primary: {is_primary})")
             except Exception as e:
                 print(f"  ⚠ Failed to query paired account status: {e}")
+        else:
+            print(f"  ⚠ No db_account_id provided for platform ID '{account_id}'")
 
         # 2. Poll for balance changes AND database signals
         while True:
