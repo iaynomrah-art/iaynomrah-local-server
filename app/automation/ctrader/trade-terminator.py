@@ -160,12 +160,22 @@ def terminate_trade(page, symbol: str, account_id: str = None, db_account_id: st
                             print("🔪 Executing 'close-position' to terminate paired trade...")
                             close_result = close_position(page, symbol)
                             
-                            # Read final balance after closing
+                            # Wait for balance to update after closing, then read it
+                            final_balance_received = None
                             try:
-                                final_text = balance_locator.inner_text()
-                                final_balance_received = parse_balance(final_text)
-                                print(f"💾 Final balance after automation close: {final_balance_received}")
-                            except Exception:
+                                print(f"⏳ Waiting for balance to update from {initial_balance}...")
+                                for attempt in range(50):  # 50 x 200ms = 10 seconds max
+                                    page.wait_for_timeout(200)
+                                    final_text = balance_locator.inner_text()
+                                    final_balance_received = parse_balance(final_text)
+                                    if final_balance_received != initial_balance and final_balance_received > 0:
+                                        print(f"💾 Final balance after automation close: {final_balance_received} (took ~{(attempt+1)*0.2:.1f}s)")
+                                        break
+                                else:
+                                    # Timed out — use whatever we got last
+                                    print(f"⚠️ Balance didn't change after 10s. Using last read: {final_balance_received}")
+                            except Exception as e:
+                                print(f"⚠️ Error reading final balance: {e}")
                                 final_balance_received = None
                             
                             # Write termination status + final balance + trade_status = done
