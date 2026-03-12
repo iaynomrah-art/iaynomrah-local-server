@@ -123,7 +123,7 @@ def terminate_trade(page, symbol: str, account_id: str = None, db_account_id: st
                 print(f"🔑 Using DB ID '{db_account_id}' directly from pairing session.")
                 
                 # Find the pairing where this account is either primary or secondary
-                res = supabase.table("paired_trading_accounts").select("id, primary_account_id, secondary_account_id").or_(f"primary_account_id.eq.{db_account_id},secondary_account_id.eq.{db_account_id}").eq("is_active", True).execute()
+                res = supabase.table("paired_trading_accounts").select("id, primary_account_id, secondary_account_id").or_(f"primary_account_id.eq.{db_account_id},secondary_account_id.eq.{db_account_id}").neq("trade_status", "done").order("created_at", desc=True).limit(1).execute()
                 if res.data and len(res.data) > 0:
                     record = res.data[0]
                     paired_record_id = record['id']
