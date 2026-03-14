@@ -294,8 +294,12 @@ def run(
             maximize_browser_window(page)
 
             current_url = page.url or ""
-            if "tradelocker" not in current_url.lower():
-                platform_url = os.getenv("TRADELOCKER_URL", "https://demo.tradelocker.com/en/trade")
+            platform_url = os.getenv("TRADELOCKER_URL", "https://demo.tradelocker.com/en/trade")
+
+            # If not on TradeLocker at all, or stuck on the auth/login domain, navigate to the trade URL.
+            if "tradelocker" not in current_url.lower() or "auth.tradelocker.com" in current_url.lower():
+                if "auth.tradelocker.com" in current_url.lower():
+                    print(f"Stuck on auth page for {username}. Navigating to trade URL...")
                 if not ensure_tradelocker_loaded(page, platform_url):
                     raise Exception("TradeLocker failed to load properly after multiple attempts.")
             else:
@@ -305,7 +309,6 @@ def run(
                 ensure_positions_tab(page)
 
             login_result = {"success": True}
-            login_button = page.locator('button:has-text("Log in"), button:has-text("Sign in"), a:has-text("Log in"), a:has-text("Sign in")').first
 
             if operation == "login-only":
                 from app.automation.tradelocker.login import login as login_flow
@@ -384,10 +387,9 @@ def run(
                     "reason": "TradeLocker login verified",
                 }
 
-            try:
-                login_button.wait_for(state="visible", timeout=5000)
+            # For all non-login-only operations: login if not already authenticated.
+            if not is_tradelocker_logged_in(page):
                 print("Not logged in. Starting TradeLocker login flow...")
-
                 from app.automation.tradelocker.login import login as login_flow
                 login_result = login_flow(page, username, password, server)
                 if isinstance(login_result, dict) and not login_result.get("success", False):
@@ -410,8 +412,8 @@ def run(
 
                 page.wait_for_load_state("networkidle")
                 print("TradeLocker login flow completed.")
-            except Exception:
-                print("No login button detected. Assuming active session.")
+            else:
+                print("Already authenticated. Skipping login.")
 
             # Ensure modals are closed before account switching or order actions.
             dismiss_post_login_overlays(page)
@@ -423,21 +425,27 @@ def run(
             match operation:
                 case "place-order":
                     result = place_order_click(page)
-                case "auto-place-order":
-                    result = full_place_order(page, purchase_type, order_amount, symbol, take_profit, stop_loss)
-                case "auto-place-and-terminate":
+                case "auto-place-and-terminate" | "default" | "1" | _:
+                    print(f"Operation: auto-place-and-terminate (Default). Placing order then monitoring {symbol}...")
                     place_result = full_place_order(page, purchase_type, order_amount, symbol, take_profit, stop_loss)
                     is_success = place_result.get("success", False) if isinstance(place_result, dict) else bool(place_result)
+                    
                     if is_success:
+                        print("Order placed successfully! Handing over to trade-terminator...")
                         result = terminate_trade(page, symbol, account_id, db_account_id)
                     else:
+                        print("Order placement failed, skipping terminator.")
                         result = place_result
                 case "place-and-terminate":
+                    print(f"Operation: place-and-terminate. Clicking Place Order then monitoring {symbol}...")
                     place_result = place_order_click(page)
                     is_success = place_result.get("success", False) if isinstance(place_result, dict) else bool(place_result)
+                    
                     if is_success:
+                        print("Order placed successfully! Handing over to trade-terminator...")
                         result = terminate_trade(page, symbol, account_id, db_account_id)
                     else:
+                        print("Order placement failed, skipping terminator.")
                         result = place_result
                 case "edit-place-order":
                     result = edit_place_order(page, purchase_type, order_amount, symbol, take_profit, stop_loss)
@@ -447,8 +455,6 @@ def run(
                     result = terminate_trade(page, symbol, account_id, db_account_id)
                 case "close-position":
                     result = close_position(page, symbol)
-                case "default" | "1" | _:
-                    result = input_order(page, purchase_type, order_amount, symbol, take_profit, stop_loss)
 
             if isinstance(result, bool):
                 success = result

@@ -1,3 +1,4 @@
+import re
 import random
 import importlib
 
@@ -28,22 +29,33 @@ def place_order(page):
         except Exception:
             pass
 
-        # Selectors for the Place order / Execute button
-        selectors = [
-            'button:has-text("Place order")',
-            'button:has-text("Place Order")',
-            'button:has-text("Execute")',
-            '.place-order-button',
-            'button.green:has-text("Buy")',
-            'button.red:has-text("Sell")'
-        ]
-        
+        # --- Dynamic SELL/BUY execute button (highest priority) ---
+        # The final execute button at the bottom of the cTrader order panel
+        # has dynamic text like "SELL 0.01 @ 359.19" or "BUY 0.01 @ 359.19".
         execute_button = None
-        for selector in selectors:
-            btn = page.locator(selector).first
-            if btn.is_visible():
-                execute_button = btn
-                break
+        try:
+            dynamic_btn = page.get_by_role("button", name=re.compile(r"^(SELL|BUY)\s", re.IGNORECASE)).first
+            if dynamic_btn.is_visible(timeout=1500):
+                execute_button = dynamic_btn
+                print(f"  ✓ Found dynamic execute button: '{dynamic_btn.inner_text().strip()}'")
+        except Exception:
+            pass
+
+        # Fallback selectors for the Place order / Execute button
+        if not execute_button:
+            selectors = [
+                'button:has-text("Place order")',
+                'button:has-text("Place Order")',
+                'button:has-text("Execute")',
+                '.place-order-button',
+                'button.green:has-text("Buy")',
+                'button.red:has-text("Sell")'
+            ]
+            for selector in selectors:
+                btn = page.locator(selector).first
+                if btn.is_visible():
+                    execute_button = btn
+                    break
         
         if execute_button:
             # Check if the button is disabled (multiple methods for cTrader's custom UI)

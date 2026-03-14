@@ -47,19 +47,34 @@ def close_position(page, symbol: str) -> dict:
             }
 
         # Prefer explicit close icon/action button in the row.
-        close_btn = row.locator(
-            'button:has-text("Close"), [aria-label*="close" i], [title*="close" i], [data-testid*="close" i], [data-testid*="remove" i], [data-testid*="x" i]'
-        ).first
-
+        # Codegen says: getByRole('button', { name: 'Close position', exact: true })
+        close_btn = None
         clicked = False
-        try:
-            if close_btn.is_visible(timeout=1200):
-                close_btn.click(timeout=2000)
-                clicked = True
-        except Exception:
-            clicked = False
 
-        # Fallback for icon-only actions columns where semantic labels are missing.
+        # Strategy 1: The exact button name seen in codegen
+        try:
+            btn = row.get_by_role("button", name="Close position", exact=True).first
+            if btn.is_visible(timeout=1000):
+                btn.click(timeout=2000)
+                clicked = True
+                print(f"[close-position] Clicked exact 'Close position' button.")
+        except Exception:
+            pass
+
+        # Strategy 2: Fallback to old heuristic icon selectors
+        if not clicked:
+            try:
+                candidate = row.locator(
+                    'button:has-text("Close"), [aria-label*="close" i], [title*="close" i], [data-testid*="close" i], [data-testid*="remove" i], [data-testid*="x" i]'
+                ).first
+                if candidate.is_visible(timeout=1000):
+                    candidate.click(timeout=2000)
+                    clicked = True
+                    print(f"[close-position] Clicked heuristic close button.")
+            except Exception:
+                pass
+
+        # Strategy 3: Fallback for icon-only actions columns where semantic labels are missing.
         if not clicked:
             try:
                 action_buttons = row.locator("button")
@@ -67,8 +82,9 @@ def close_position(page, symbol: str) -> dict:
                 if count > 0:
                     action_buttons.nth(count - 1).click(timeout=1800)
                     clicked = True
+                    print(f"[close-position] Clicked last button in row as fallback.")
             except Exception:
-                clicked = False
+                pass
 
         # Final fallback: use global Close All flow.
         if not clicked:

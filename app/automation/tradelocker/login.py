@@ -1,8 +1,47 @@
 import random
 import os
 import re
-from app.automation.tradelocker._ui import first_visible, click_first, clear_and_fill
 
+
+# ---------------------------------------------------------------------------
+# UI helpers (inlined – no _ui.py dependency)
+# ---------------------------------------------------------------------------
+
+def first_visible(page, selectors, timeout=3000):
+    """Return the first visible locator from candidate selectors."""
+    for selector in selectors:
+        try:
+            loc = page.locator(selector).first
+            if loc.is_visible(timeout=timeout):
+                return loc
+        except Exception:
+            continue
+    return None
+
+
+def click_first(page, selectors, timeout=3000, click_timeout=2000):
+    """Click the first visible element from selectors."""
+    target = first_visible(page, selectors, timeout=timeout)
+    if not target:
+        return False
+    try:
+        target.click(timeout=click_timeout)
+        return True
+    except Exception:
+        return False
+
+
+def clear_and_fill(locator, page, value):
+    """Clear an input and fill with value."""
+    locator.click(timeout=1500)
+    page.keyboard.press("Control+A")
+    page.keyboard.press("Backspace")
+    locator.fill(str(value))
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
 def random_delay(page, min_ms=800, max_ms=2500):
     delay = random.randint(min_ms, max_ms)
@@ -119,6 +158,10 @@ def dismiss_post_login_overlays(page):
             pass
         break
 
+
+# ---------------------------------------------------------------------------
+# Main login flow
+# ---------------------------------------------------------------------------
 
 def login(page, username, password, server=None):
     if not password:

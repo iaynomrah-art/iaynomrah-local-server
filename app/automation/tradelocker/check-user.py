@@ -1,5 +1,4 @@
 import random
-from app.automation.tradelocker._ui import click_first, first_visible
 
 
 def random_delay(page, min_ms=800, max_ms=2500):
@@ -7,110 +6,137 @@ def random_delay(page, min_ms=800, max_ms=2500):
     page.wait_for_timeout(delay)
 
 
-def _open_bottom_left_account_drawer(page):
-    """Open TradeLocker account drawer from the bottom-left profile/avatar area."""
-    selectors = [
-        # Avatar/profile trigger at bottom-left rail.
-        'button[aria-label*="account" i]',
-        'button[aria-label*="profile" i]',
-        '[data-testid*="account-switcher" i]',
-        '[data-testid*="profile" i]',
-        # Drawer-specific text appears after opening.
-        ':text("Trading account")',
-    ]
+# ---------------------------------------------------------------------------
+# UI helpers (inlined – no _ui.py dependency)
+# ---------------------------------------------------------------------------
 
-    opened = click_first(page, selectors, timeout=1600, click_timeout=1800)
-    if opened:
-        page.wait_for_timeout(250)
-        return True
+def first_visible(page, selectors, timeout=3000):
+    """Return the first visible locator from candidate selectors."""
+    for selector in selectors:
+        try:
+            loc = page.locator(selector).first
+            if loc.is_visible(timeout=timeout):
+                return loc
+        except Exception:
+            continue
+    return None
 
-    # Last-resort click near bottom-left where avatar usually lives.
+
+def click_first(page, selectors, timeout=3000, click_timeout=2000):
+    """Click the first visible element from selectors."""
+    target = first_visible(page, selectors, timeout=timeout)
+    if not target:
+        return False
     try:
-        page.mouse.click(24, 690)
-        page.wait_for_timeout(300)
+        target.click(timeout=click_timeout)
         return True
     except Exception:
         return False
 
 
-def _select_account_id_from_drawer(page, account_id):
-    account_text = str(account_id).strip().lstrip("#")
+# ---------------------------------------------------------------------------
+# Account drawer helpers
+# ---------------------------------------------------------------------------
 
-    # Prefer row that contains full account header like "#1989349".
-    row_candidates = [
-        f'div:has-text("#{account_text}")',
-        f'span:has-text("#{account_text}")',
-        f'div:has-text("{account_text}")',
-        f'span:has-text("{account_text}")',
+def _open_bottom_left_profile(page):
+    """
+    Click the bottom-left profile/avatar button to open the account drawer.
+    Only uses the profile button area — no coordinate guessing of other UI zones.
+    """
+    selectors = [
+        # Primary: avatar/account button in the bottom-left nav rail.
+        'button[aria-label*="account" i]',
+        'button[aria-label*="profile" i]',
+        '[data-testid*="account-switcher" i]',
+        '[data-testid*="profile" i]',
+        # Fallback: visible text that appears in the closed-state button.
+        'button:has-text("Trading account")',
+        'button:has-text("Account")',
     ]
 
-    for selector in row_candidates:
-        try:
-            row = page.locator(selector).first
-            if row.is_visible(timeout=1800):
-                row.click(timeout=2200)
-                page.wait_for_timeout(250)
-                return True
-        except Exception:
-            continue
+    opened = click_first(page, selectors, timeout=2000, click_timeout=2000)
+    if opened:
+        page.wait_for_timeout(400)
+        return True
 
-    return False
+    # Last-resort: click the very bottom-left corner where the avatar lives.
+    # This is intentionally limited to a tight region (not timezone or other UI).
+    try:
+        page.mouse.click(26, 690)
+        page.wait_for_timeout(400)
+        return True
+    except Exception:
+        return False
 
+
+def _close_drawer(page):
+    """Close the account drawer by pressing Escape, then clicking into the chart."""
+    try:
+        page.keyboard.press("Escape")
+        page.wait_for_timeout(300)
+    except Exception:
+        pass
+
+    # Click into the chart canvas area to dismiss any remaining overlay.
+    try:
+        page.mouse.click(350, 200)
+        page.wait_for_timeout(200)
+    except Exception:
+        pass
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
 
 def check_user(page, username, account_id):
     """
-    Opens account switcher and selects the requested account_id.
-    Raises ValueError if account_id is missing or cannot be found.
+    Opens the bottom-left account drawer, verifies the requested account_id
+    is listed, then clicks outside to close the drawer.
+
+    Does NOT switch accounts — just confirms presence.
+    Logs a warning (does NOT raise) if the account cannot be found.
     """
     if not account_id:
-        raise ValueError("TradeLocker account_id is required")
-
-    random_delay(page, 600, 1200)
-
-    switcher_selectors = [
-        'button[aria-label*="account" i]',
-        'button:has-text("Account")',
-        'button:has-text("Accounts")',
-        '[data-testid*="account"]',
-        'div:has-text("Account")'
-    ]
-
-    # First choice: bottom-left account drawer used by current TradeLocker UI.
-    opened = _open_bottom_left_account_drawer(page)
-
-    # Fallback: legacy account switcher controls.
-    if not opened:
-        opened = click_first(page, switcher_selectors, timeout=1200, click_timeout=2000)
-
-    if not opened:
-        print("Account switcher not explicitly opened; trying direct account lookup.")
-
-    random_delay(page, 400, 900)
-
-    # Primary selection path for drawer UI.
-    if _select_account_id_from_drawer(page, account_id):
-        print(f"Selected TradeLocker account: {account_id}")
+        print("WARNING: No account_id provided – skipping account check.")
         return
 
-    account_text = str(account_id).strip()
-    account_candidates = [
-        f'text="{account_text}"',
-        f'text="#{account_text.lstrip("#")}"',
-        f':text-is("{account_text}")',
-        f'span:has-text("{account_text}")',
+    random_delay(page, 400, 800)
+
+    opened = _open_bottom_left_profile(page)
+    if not opened:
+        print(f"WARNING: Could not open account drawer to verify account '{account_id}'.")
+        return
+
+    random_delay(page, 300, 600)
+
+    # Check if the account ID is visible inside the drawer.
+    account_text = str(account_id).strip().lstrip("#")
+    found = False
+
+    for selector in [
+        f'div:has-text("#{account_text}")',
+        f'span:has-text("#{account_text}")',
+        f'li:has-text("#{account_text}")',
         f'div:has-text("{account_text}")',
-        f'[data-testid*="account"]:has-text("{account_text}")',
-    ]
+        f'span:has-text("{account_text}")',
+    ]:
+        try:
+            el = page.locator(selector).first
+            if el.is_visible(timeout=1500):
+                found = True
+                break
+        except Exception:
+            continue
 
-    for selector in account_candidates:
-        candidate = first_visible(page, [selector], timeout=2500)
-        if candidate:
-            try:
-                candidate.click(timeout=2500)
-                random_delay(page, 300, 700)
-                print(f"Selected TradeLocker account: {account_id}")
-                return
-            except Exception:
-                continue
+    if found:
+        print(f"Verified TradeLocker account: #{account_text}")
+    else:
+        print(f"WARNING: TradeLocker account ID '{account_id}' not found in drawer. "
+              "Continuing with currently selected account.")
 
-    raise ValueError(f"TradeLocker account ID '{account_id}' not found in account switcher")
+    # Close the drawer – click outside, do NOT click any account row.
+    _close_drawer(page)
+    
+    # Wait 3 seconds (3000ms) after clicking outside to ensure the drawer is fully closed
+    page.wait_for_timeout(3000)
