@@ -425,7 +425,7 @@ def run(
             match operation:
                 case "place-order":
                     result = place_order_click(page)
-                case "auto-place-and-terminate" | "default" | "1" | _:
+                case "auto-place-and-terminate" | "default" | "1":
                     print(f"Operation: auto-place-and-terminate (Default). Placing order then monitoring {symbol}...")
                     place_result = full_place_order(page, purchase_type, order_amount, symbol, take_profit, stop_loss)
                     is_success = place_result.get("success", False) if isinstance(place_result, dict) else bool(place_result)
