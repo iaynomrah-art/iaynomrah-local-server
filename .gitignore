@@ -4,3 +4,5 @@ db.sql
 cloudflared_error.log
 clouflared.log
 ctrader_profile
+node_modules
+dist
