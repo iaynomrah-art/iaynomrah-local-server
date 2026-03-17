@@ -54,6 +54,55 @@ def _update_paired_record(supabase, record_id, payload):
         return None
 
 
+def _find_relevant_pairing(supabase, db_account_id: str):
+    """
+    Find the most relevant paired_trading_accounts row for this account.
+
+    Important: we must NOT exclude trade_status='done' rows blindly, because one device
+    can broadcast an exit (and set trade_status=done) before the partner device's
+    terminator attaches/restarts. In that case we still need to pick up exit_signal
+    and close locally if our termination status is not completed yet.
+    """
+    if not db_account_id:
+        return None
+
+    try:
+        res = (
+            supabase.table("paired_trading_accounts")
+            .select(
+                "id, primary_account_id, secondary_account_id, trade_status, is_active, "
+                "exit_signal, exit_triggered_by, primary_termination_status, secondary_termination_status"
+            )
+            .or_(f"primary_account_id.eq.{db_account_id},secondary_account_id.eq.{db_account_id}")
+            .order("created_at", desc=True)
+            .limit(5)
+            .execute()
+        )
+    except Exception as e:
+        print(f"  ⚠ Failed to query paired account status: {e}")
+        return None
+
+    rows = res.data or []
+    if not rows:
+        return None
+
+    for record in rows:
+        is_primary = (record.get("primary_account_id") == db_account_id)
+        status_col = "primary_termination_status" if is_primary else "secondary_termination_status"
+        my_status = record.get(status_col)
+        exit_signal = record.get("exit_signal")
+        trade_status = record.get("trade_status")
+
+        # Prefer still-active trades; but also allow "done" trades if there's an exit_signal
+        # and this side hasn't acknowledged completion yet.
+        if trade_status != "done":
+            return record
+        if exit_signal and my_status != "completed":
+            return record
+
+    return None
+
+
 def _parse_balance(text: str) -> float:
     # Strip out new lines to make it a single string
     text = (text or "").replace('\n', ' ')
@@ -139,28 +188,24 @@ def terminate_trade(page, symbol: str, account_id: str = None, db_account_id: st
         print(f"⏳ Waiting for balance to change from {initial_balance} to detect Take Profit / Stop Loss...")
 
         if db_account_id:
-            try:
-                 # Find the pairing where this account is either primary or secondary
-                res = supabase.table("paired_trading_accounts").select("id, primary_account_id, secondary_account_id").or_(
-                    f"primary_account_id.eq.{db_account_id},secondary_account_id.eq.{db_account_id}"
-                ).neq("trade_status", "done").order("created_at", desc=True).limit(1).execute()
-                
-                if res.data and len(res.data) > 0:
-                    record = res.data[0]
-                    paired_record_id = record["id"]
-                    is_primary = (record["primary_account_id"] == db_account_id)
-                    print(f"🔗 Paired trade detected. DB Record: {paired_record_id} (Is Primary: {is_primary})")
-                    
-                    # Write starting balance to DB immediately
-                    balance_col = "primary_starting_balance" if is_primary else "secondary_starting_balance"
-                    _update_paired_record(supabase, paired_record_id, {balance_col: initial_balance})
-                    print(f"💾 Saved starting balance {initial_balance} → {balance_col}")
-            except Exception as e:
-                print(f"  ⚠ Failed to query paired account status: {e}")
+            record = _find_relevant_pairing(supabase, db_account_id)
+            if record:
+                paired_record_id = record["id"]
+                is_primary = (record["primary_account_id"] == db_account_id)
+                print(f"🔗 Paired trade detected. DB Record: {paired_record_id} (Is Primary: {is_primary})")
+
+                # Write starting balance to DB immediately (best-effort)
+                balance_col = "primary_starting_balance" if is_primary else "secondary_starting_balance"
+                _update_paired_record(supabase, paired_record_id, {balance_col: initial_balance})
+                print(f"💾 Saved starting balance {initial_balance} → {balance_col}")
+            else:
+                print("ℹ️ No relevant paired trade found (yet). Running balance-only monitoring.")
 
         final_balance = None
+        loop_i = 0
         
         while True:
+            loop_i += 1
             if time.time() - start_ts > timeout_seconds:
                 return {
                     "success": False,
@@ -171,15 +216,27 @@ def terminate_trade(page, symbol: str, account_id: str = None, db_account_id: st
             _refresh_workspace(page)
             page.wait_for_timeout(300)
 
+            # --- Try to attach to pairing if we didn't find it yet ---
+            if (not paired_record_id) and db_account_id and (loop_i % 8 == 0):  # ~ every 2.4s
+                record = _find_relevant_pairing(supabase, db_account_id)
+                if record:
+                    paired_record_id = record["id"]
+                    is_primary = (record["primary_account_id"] == db_account_id)
+                    print(f"🔗 Paired trade detected (late attach). DB Record: {paired_record_id} (Is Primary: {is_primary})")
+
             # --- Check Database Signal ---
             if paired_record_id:
                 try:
-                    res = supabase.table("paired_trading_accounts").select("exit_signal, exit_triggered_by").eq("id", paired_record_id).execute()
+                    res = supabase.table("paired_trading_accounts").select(
+                        "exit_signal, exit_triggered_by, primary_termination_status, secondary_termination_status"
+                    ).eq("id", paired_record_id).execute()
                     if res.data and len(res.data) > 0:
                         db_signal = res.data[0].get("exit_signal")
                         trigger = res.data[0].get("exit_triggered_by")
+                        status_col = "primary_termination_status" if is_primary else "secondary_termination_status"
+                        my_status = res.data[0].get(status_col)
                         
-                        if db_signal and trigger != db_account_id:
+                        if db_signal and trigger != db_account_id and my_status != "completed":
                             role = "PRIMARY" if is_primary else "SECONDARY"
                             print(f"\n📡 [{role}] RECEIVED exit signal '{db_signal}' from partner (triggered by {trigger})")
                             print(f"🤖 [{role}] This device is closing position via AUTOMATION (partner triggered)")
@@ -203,7 +260,6 @@ def terminate_trade(page, symbol: str, account_id: str = None, db_account_id: st
                                 print(f"⚠️ Error reading final balance: {e}")
                                 final_balance_received = None
                                 
-                            status_col = "primary_termination_status" if is_primary else "secondary_termination_status"
                             balance_col = "primary_final_balance" if is_primary else "secondary_final_balance"
                             
                             update_payload = {
