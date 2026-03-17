@@ -7,36 +7,7 @@ $errorLogPath = ".\cloudflared_error.log"
 $envPath = ".\.env"
 $rootPath = "C:\Users\Admin\code\iaynomrah-local-server\"
 
-$skipSetup = $false
 while ($true) {
-    if (-not $skipSetup) {
-        # Ask about git pull
-    $doPull = Read-Host "Pull latest changes from git? (y/n)"
-    if ($doPull -eq "y") {
-        Write-Output "Pulling latest changes..."
-        git pull
-        if ($LASTEXITCODE -ne 0) {
-            Write-Output "Git pull failed."
-            Read-Host "Press Enter to try again or Ctrl+C to exit"
-            continue
-        }
-    }
-
-    # Ask about pip install
-    $doInstall = Read-Host "Run pip install -r requirements.txt? (y/n)"
-    if ($doInstall -eq "y") {
-        Write-Output "Installing Python dependencies..."
-        .\.venv\Scripts\Activate.ps1
-        pip install -r requirements.txt
-        if ($LASTEXITCODE -ne 0) {
-            Write-Output "pip install failed."
-            Read-Host "Press Enter to try again or Ctrl+C to exit"
-            continue
-        }
-    }
-}
-$skipSetup = $false
-
     # Clear old logs
     Remove-Item $logPath -ErrorAction SilentlyContinue
     Remove-Item $errorLogPath -ErrorAction SilentlyContinue
@@ -108,21 +79,13 @@ $skipSetup = $false
 
     # After server stops, ask to restart
     Write-Host ""
-    $choice = Read-Host "Server stopped. Press 'r' to Quick Reload, 'y' for Setup + Start, or 'n' to exit"
-    
+    $choice = Read-Host "Server stopped. Press 'r' to Restart or 'n' to exit"
+
     if ($choice -eq "r") {
-        $skipSetup = $true
-        Write-Output "Quick Reloading..."
+        Write-Output "Restarting..."
         Write-Host ""
         continue
-    }
-    elseif ($choice -eq "y") {
-        $skipSetup = $false
-        Write-Output "Restarting with setup..."
-        Write-Host ""
-        continue
-    }
-    else {
+    } else {
         Write-Output "Exiting."
         break
     }

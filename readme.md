@@ -6,14 +6,14 @@ Harmony is a powerful FastAPI-based orchestration server designed to manage, tri
 
 ## 🚀 Quick Start (Recommended)
 
-The project includes a robust PowerShell management script (`scipt.ps1`) that automates the entire lifecycle of the server, including dependency management, frontend builds, and tunnel configuration.
+The project includes a robust PowerShell management script (`start.ps1`) that automates the entire lifecycle of the server, including dependency management, frontend builds, and tunnel configuration.
 
 ### 1. Running the Script
 
 Open a PowerShell terminal and run:
 
 ```powershell
-.\scipt.ps1
+.\start.ps1
 ```
 
 ### 2. Script Features
@@ -56,20 +56,24 @@ uvicorn app.main:app --port 8000 --reload
 
 ### Manual Server Startup
 
-If you are not using the `scipt.ps1` script, you can start the server manually by following these steps:
+If you are not using the `start.ps1` script, you can start the server manually by following these steps:
 
 1. **Start the Cloudflare Tunnel**:
    Open a terminal and run the test tunnel for port 8000:
-   ```powershell
+
+```powershell
    cloudflared tunnel --url http://localhost:8000
-   ```
+```
+
 2. **Update `.env`**:
-   Copy the generated tunnel URL from the output and paste it into your `.env` file.
+   Copy the generated tunnel URL from the output and paste it into your `.env` file as `API_BASE_URL`.
 3. **Start the Server**:
-   Open a new terminal (in your virtual environment) and run:
-   ```powershell
-   uvicorn app.main:app --reload --port 8000
-   ```
+   Activate your virtual environment and run:
+
+```powershell
+   .\.venv\Scripts\Activate.ps1
+   uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+```
 
 ---
 
@@ -86,10 +90,10 @@ The simplest way — just open PowerShell and run:
 3. In the location box, paste the following (adjust the path if moved):
 
    ```powershell
-   powershell.exe -WindowStyle Hidden -ExecutionPolicy Bypass -File "C:\Users\Admin\Desktop\Code\iaynomrah-local-server\script.ps1"
+   powershell.exe -WindowStyle Hidden -ExecutionPolicy Bypass -File "C:\Users\Admin\Desktop\Code\iaynomrah-local-server\start.ps1"
    ```
 
-   powershell.exe -ExecutionPolicy Bypass -File "C:\Users\Admin\Documents\code\iaynomrah-local-server\scipt.ps1"
+   powershell.exe -ExecutionPolicy Bypass -File "C:\Users\Admin\Documents\code\iaynomrah-local-server\start.ps1"
 
    ```
 
@@ -107,7 +111,7 @@ If you want a single `.exe` file to pin to your taskbar or distribute:
    ```
 2. **Convert to EXE**:
    ```powershell
-   ps2exe .\scipt.ps1 HarmonyServer.exe -noConsole -title "Harmony Server"
+   ps2exe .\start.ps1 HarmonyServer.exe -noConsole -title "Harmony Server"
    ```
 
 ---
@@ -125,7 +129,7 @@ If you want a single `.exe` file to pin to your taskbar or distribute:
   - `edit-place-order.py` — Edits existing orders.
   - `input-order.py` — Handles order input fields.
 - **`frontend/`**: Vite-based React dashboard for real-time monitoring.
-- **`scipt.ps1`**: The primary "Harmony Manager" script.
+- **`start.ps1`**: The primary "Harmony Manager" script.
 
 ---
 
@@ -136,4 +140,4 @@ Your `.env` file should include:
 - `PUBLIC_SUPABASE_URL`: Your Supabase project URL.
 - `SUPABASE_SERVICE_SECRET_KEY`: For admin-level access.
 - `FRANCHISE_ID`: Your franchise identifier.
-- `API_BASE_URL`: Auto-updated by `scipt.ps1` with the Cloudflare tunnel URL.
+- `API_BASE_URL`: Auto-updated by `start.ps1` with the Cloudflare tunnel URL.
