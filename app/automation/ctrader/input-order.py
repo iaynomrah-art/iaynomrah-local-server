@@ -6,33 +6,57 @@ def random_delay(page, min_ms=800, max_ms=2500):
     delay = random.randint(min_ms, max_ms)
     page.wait_for_timeout(delay)
 
+def _find_nearest_input(page, label_box):
+    """Find the visible text input closest to and just below the given label."""
+    all_inputs = page.locator("input[type='text']").all()
+    best_input = None
+    best_distance = float('inf')
+
+    for inp in all_inputs:
+        try:
+            if not inp.is_visible():
+                continue
+            box = inp.bounding_box()
+            if not box:
+                continue
+            # Input should be below (or same row as) the label, and horizontally close
+            y_diff = box['y'] - label_box['y']
+            x_diff = abs(box['x'] - label_box['x'])
+            if 0 <= y_diff < 80 and x_diff < 300:
+                distance = y_diff + x_diff
+                if distance < best_distance:
+                    best_distance = distance
+                    best_input = inp
+        except Exception:
+            continue
+    return best_input
+
+
 def _ensure_field_enabled_and_fill(page, label_text, value, timeout=5000):
-    """Robustly locates the input by isolating the exact UI block."""
+    """Locates the input using geometric proximity to the label text."""
     label_locator = page.get_by_text(label_text, exact=True).first
 
-    section_container = page.locator("div").filter(
-        has=page.get_by_text(label_text, exact=True)
-    ).filter(
-        has=page.get_by_text("Pips", exact=True)
-    ).filter(
-        has_not_text="Quantity"
-    ).filter(
-        has_not_text="Place order"
-    ).last
-    
-    input_locator = section_container.locator("input[type='text']").first
-
-    try:
-        input_locator.wait_for(state="visible", timeout=1000)
-        input_locator.click(timeout=1000)
+    def _try_fill(inp):
+        inp.click(timeout=1000)
         page.keyboard.press("Control+A")
         page.keyboard.press("Backspace")
-        input_locator.fill(str(value))
-        print(f"  ✓ {label_text} field was already visible — filled Pips with {value}")
-        return True
-    except Exception:
-        print(f"  ⏳ {label_text} field hidden — clicking text label to enable...")
+        inp.fill(str(value))
 
+    # --- Attempt 1: Field is already visible ---
+    try:
+        label_locator.wait_for(state="visible", timeout=2000)
+        label_box = label_locator.bounding_box()
+        if label_box:
+            inp = _find_nearest_input(page, label_box)
+            if inp:
+                _try_fill(inp)
+                print(f"  ✓ {label_text} field was already visible — filled Pips with {value}")
+                return True
+    except Exception:
+        pass
+
+    # --- Attempt 2: Click label to expand/enable, then find input ---
+    print(f"  ⏳ {label_text} field hidden — clicking text label to enable...")
     try:
         label_locator.wait_for(state="visible", timeout=timeout)
         label_locator.click()
@@ -44,13 +68,15 @@ def _ensure_field_enabled_and_fill(page, label_text, value, timeout=5000):
     random_delay(page, 400, 800)
 
     try:
-        input_locator.wait_for(state="visible", timeout=timeout)
-        input_locator.click(timeout=1000)
-        page.keyboard.press("Control+A")
-        page.keyboard.press("Backspace")
-        input_locator.fill(str(value))
-        print(f"  ✓ {label_text} field appeared after toggle — filled Pips with {value}")
-        return True
+        label_box = label_locator.bounding_box()
+        if label_box:
+            inp = _find_nearest_input(page, label_box)
+            if inp:
+                _try_fill(inp)
+                print(f"  ✓ {label_text} field appeared after toggle — filled Pips with {value}")
+                return True
+        print(f"  ✗ {label_text} input not found near label after toggle")
+        return False
     except Exception as e:
         print(f"  ✗ {label_text} input did not become visible after toggle: {e}")
         return False
@@ -183,6 +209,17 @@ def input_order(page, purchase_type, order_amount, symbol, take_profit, stop_los
             _ensure_field_enabled_and_fill(page, "Stop loss", stop_loss)
 
         random_delay(page, 500, 1000)
+        
+        # --- 6. CHECK FOR WARNINGS (DO NOT CLICK) ---
+        warning_text = None
+        try:
+            # Look specifically for the red warning banner below the Place Order button
+            warning_el = page.locator(':text("The market is closed"), :text("Only pending orders are accepted"), :text("not available for trading"), :text("Insufficient funds")').first
+            if warning_el.is_visible(timeout=1500):
+                warning_text = warning_el.inner_text().strip()
+                print(f"  ⚠ Warning detected: {warning_text}")
+        except Exception:
+            pass  # No warning found, proceed normally
 
         print("Order input sequence complete.")
         return {"success": True, "reason": None, "warning": None}

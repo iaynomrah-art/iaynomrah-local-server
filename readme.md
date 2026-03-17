@@ -54,6 +54,23 @@ cloudflared tunnel --url http://localhost:8000
 uvicorn app.main:app --port 8000 --reload
 ```
 
+### Manual Server Startup
+
+If you are not using the `scipt.ps1` script, you can start the server manually by following these steps:
+
+1. **Start the Cloudflare Tunnel**:
+   Open a terminal and run the test tunnel for port 8000:
+   ```powershell
+   cloudflared tunnel --url http://localhost:8000
+   ```
+2. **Update `.env`**:
+   Copy the generated tunnel URL from the output and paste it into your `.env` file.
+3. **Start the Server**:
+   Open a new terminal (in your virtual environment) and run:
+   ```powershell
+   uvicorn app.main:app --reload --port 8000
+   ```
+
 ---
 
 ## 🖥️ Starting the Server

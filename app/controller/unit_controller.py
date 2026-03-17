@@ -19,6 +19,7 @@ async def register_unit():
         supabase = get_supabase()
         
         print(f"Registering unit with GUID: {guid}")
+
         
         try:
             # Check if unit exists

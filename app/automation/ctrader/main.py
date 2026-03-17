@@ -21,6 +21,9 @@ input_order = input_order_module.input_order
 trade_terminator_module = importlib.import_module("app.automation.ctrader.trade-terminator")
 terminate_trade = trade_terminator_module.terminate_trade
 
+close_position_module = importlib.import_module("app.automation.ctrader.close-position")
+close_position = close_position_module.close_position
+
 _playwright = None
 _user_contexts = {}  # Map username -> persistent context
 _user_pages = {}     # Map username -> active page
@@ -206,6 +209,7 @@ def run(
     take_profit: str = None,
     stop_loss: str = None,
     account_id: str = None,
+    db_account_id: str = None,
     symbol: str = None
 ):
     global _user_pages
@@ -306,7 +310,24 @@ def run(
                         
                     if is_success:
                         print("Order placed successfully! Handing over to trade-terminator...")
-                        result = terminate_trade(page, symbol)
+                        result = terminate_trade(page, symbol, account_id, db_account_id)
+                    else:
+                        print("Order placement failed, skipping terminator.")
+                        result = place_result
+                case "place-and-terminate":
+                    print(f"Operation: place-and-terminate. Clicking Place Order then monitoring {symbol}...")
+                    place_result = place_order_click(page)
+                    
+                    # Check success properly
+                    is_success = False
+                    if isinstance(place_result, dict):
+                        is_success = place_result.get("success", False)
+                    elif isinstance(place_result, bool):
+                        is_success = place_result
+                        
+                    if is_success:
+                        print("Order placed successfully! Handing over to trade-terminator...")
+                        result = terminate_trade(page, symbol, account_id, db_account_id)
                     else:
                         print("Order placement failed, skipping terminator.")
                         result = place_result
@@ -315,7 +336,9 @@ def run(
                 case "input-order":
                     result = input_order(page, purchase_type, order_amount, symbol, take_profit, stop_loss)
                 case "trade-terminator":
-                    result = terminate_trade(page, symbol)
+                    result = terminate_trade(page, symbol, account_id, db_account_id)
+                case "close-position":
+                    result = close_position(page, symbol)
                 case "default" | "1" | _:
                     print(f"Operation: {operation} (Default). Running input_order...")
                     result = input_order(page, purchase_type, order_amount, symbol, take_profit, stop_loss)
