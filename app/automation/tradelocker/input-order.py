@@ -423,9 +423,7 @@ def _set_amount(page, value):
 
 def _toggle_and_fill(page, label_text, value):
     """
-    Turn on TP/SL if needed, then fill the price.
-    Codegen toggle: locator('label').filter(hasText: /^Take Profit$/)
-    Codegen input : getByRole('textbox', { name: 'Take Profit price' })
+    Turn on TP/SL if needed, then fill the P&L input (preferred).
     """
     if not value:
         return False
@@ -434,12 +432,10 @@ def _toggle_and_fill(page, label_text, value):
     
     # 1. Click the toggle label if not already checked
     try:
-        # Match EXACT text like the codegen `^Take Profit$`
         label_loc = page.locator("label").filter(has_text=_re.compile(rf"^{label_text}$")).first
         if label_loc.is_visible(timeout=2000):
             print(f"[{label_text}] Found toggle label via codegen filter")
             
-            # Check if it has a checked input inside it
             checkbox = label_loc.locator('input[type="checkbox"]').first
             is_checked = False
             try:
@@ -456,7 +452,6 @@ def _toggle_and_fill(page, label_text, value):
                 print(f"[{label_text}] Toggle is already ON.")
                 
         else:
-            # Fallback toggle click
             toggle = first_visible(page, [
                 f'button:has-text("{label_text}")',
                 f'div[role="checkbox"]:has-text("{label_text}")',
@@ -467,22 +462,52 @@ def _toggle_and_fill(page, label_text, value):
     except Exception as e:
         print(f"[{label_text}] Toggle logic failed: {e}")
 
-    # 2. Fill the specific input field
+    # 2. Fill the specific input field (prefer P&L, fallback to price)
+    
+    # TRY BLOCK 1: Regex Match
     try:
-        # Codegen exact input match
-        input_name = f"{label_text} price"
-        target = page.get_by_role("textbox", name=_re.compile(rf"{input_name}", _re.I)).first
-        
-        if target.is_visible(timeout=2000):
-            print(f"[{label_text}] Found input via get_by_role('textbox', name='{input_name}')")
+        # FIX: Removed the unescaped forward slash (p/l) from the regex to prevent 
+        # Playwright's JS engine from treating it as an early terminator.
+        pnl_name_rx = _re.compile(
+            rf"{_re.escape(label_text)}\s*(p&l|pl|pnl)\b",
+            _re.I,
+        )
+        target = page.get_by_role("textbox", name=pnl_name_rx).first
+        if target.is_visible(timeout=1200):
+            print(f"[{label_text}] Found input via get_by_role('textbox', name=/{pnl_name_rx.pattern}/i)")
             clear_and_fill(target, page, value)
-            print(f"Filled {label_text.lower()}: {value}")
+            print(f"Filled {label_text.lower()} (p&l): {value}")
             return True
     except Exception as e:
-        print(f"[{label_text}] Input get_by_role failed: {e}")
+        print(f"[{label_text}] Regex input get_by_role failed: {e}")
 
-    # Fallback to general input finders
+    # TRY BLOCK 2: Exact Match Fallbacks
+    # Separated so it doesn't get skipped if the regex above fails
+    try:
+        preferred_names = [f"{label_text} P&L", f"{label_text} P/L", f"{label_text} PL", f"{label_text} PNL"]
+        for input_name in preferred_names:
+            target = page.get_by_role("textbox", name=_re.compile(rf"^{_re.escape(input_name)}$", _re.I)).first
+            if target.is_visible(timeout=800):
+                print(f"[{label_text}] Found input via get_by_role('textbox', name='{input_name}')")
+                clear_and_fill(target, page, value)
+                print(f"Filled {label_text.lower()} (p&l): {value}")
+                return True
+
+        # Backward-compatible fallback: older UI used a price textbox
+        legacy_input_name = f"{label_text} price"
+        target = page.get_by_role("textbox", name=_re.compile(rf"{legacy_input_name}", _re.I)).first
+        if target.is_visible(timeout=1200):
+            print(f"[{label_text}] Found legacy input via get_by_role('textbox', name='{legacy_input_name}')")
+            clear_and_fill(target, page, value)
+            print(f"Filled {label_text.lower()} (price): {value}")
+            return True
+    except Exception as e:
+        print(f"[{label_text}] Exact/Legacy input get_by_role failed: {e}")
+
+    # 3. Last Resort Fallback
     return _fill_first(page, [
+        f'input[aria-label*="{label_text}" i][aria-label*="p&l" i]',
+        f'input[placeholder*="{label_text}" i][placeholder*="p&l" i]',
         f'input[name*="{label_text}" i]',
         f'input[placeholder*="{label_text}" i]',
         'input[name*="tp" i]' if label_text.lower().startswith("take") else 'input[name*="sl" i]',
