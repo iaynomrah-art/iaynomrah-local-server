@@ -40,18 +40,35 @@ def _resolve_db_account_id(supabase, platform_id: str) -> str:
     return None
 
 
-def _update_paired_record(supabase, record_id, payload):
-    """Update a paired_trading_accounts record and log the full response so errors are visible."""
+def _position_row_exists(page, symbol: str) -> bool:
+    """
+    Best-effort check that a position row for `symbol` exists in the TradeLocker UI.
+    Mirrors the row-finding heuristic used by `close-position`.
+    """
+    if not symbol:
+        return False
+    symbol_text = str(symbol).strip().upper()
     try:
-        res = supabase.table("paired_trading_accounts").update(payload).eq("id", record_id).execute()
-        if res.data:
-            print(f"  📝 DB update OK — {list(payload.keys())}")
-        else:
-            print(f"  ⚠ DB update returned no data — payload={payload} | response={res}")
-        return res
-    except Exception as e:
-        print(f"  ❌ DB update FAILED — payload={payload} | error={e}")
-        return None
+        positions_panel = page.locator(
+            'div:has-text("Positions"):has-text("Closed Positions"), div:has-text("Positions"):has-text("Instrument")'
+        ).first
+        row = None
+        try:
+            if positions_panel.is_visible(timeout=600):
+                row = positions_panel.locator(
+                    f'tr:has-text("{symbol_text}"), div[role="row"]:has-text("{symbol_text}"), div:has-text("{symbol_text}")'
+                ).first
+        except Exception:
+            row = None
+
+        if not row:
+            row = page.locator(
+                f'tr:has-text("{symbol_text}"), div[role="row"]:has-text("{symbol_text}"), div:has-text("{symbol_text}")'
+            ).first
+
+        return row.is_visible(timeout=800)
+    except Exception:
+        return False
 
 
 def _find_relevant_pairing(supabase, db_account_id: str):
@@ -173,6 +190,54 @@ def terminate_trade(page, symbol: str, account_id: str = None, db_account_id: st
         supabase = get_supabase()
         paired_record_id = None
         is_primary = None
+        saw_position_row = False
+
+        def _update_paired_record(record_id, payload):
+            """Update a paired_trading_accounts record and log the full response so errors are visible."""
+            nonlocal saw_position_row
+            try:
+                # Guard: don't write to DB until we've confirmed the trade position exists in UI at least once.
+                if not saw_position_row:
+                    saw_position_row = _position_row_exists(page, symbol)
+                    if not saw_position_row:
+                        time.sleep(1)
+                        saw_position_row = _position_row_exists(page, symbol)
+                if not saw_position_row:
+                    print("  ⚠ DB update skipped — no position row detected in platform yet")
+                    return None
+
+                # Guard: the paired row might not exist yet (race with creator). Confirm existence first.
+                exists = (
+                    supabase.table("paired_trading_accounts")
+                    .select("id")
+                    .eq("id", record_id)
+                    .limit(1)
+                    .execute()
+                )
+                if not (exists.data and len(exists.data) > 0):
+                    time.sleep(1)
+                    exists = (
+                        supabase.table("paired_trading_accounts")
+                        .select("id")
+                        .eq("id", record_id)
+                        .limit(1)
+                        .execute()
+                    )
+                if not (exists.data and len(exists.data) > 0):
+                    print(f"  ⚠ DB update skipped — paired_trading_accounts row not found: id={record_id}")
+                    return None
+
+                # Small delay to avoid immediate write races after detection.
+                time.sleep(1)
+                res = supabase.table("paired_trading_accounts").update(payload).eq("id", record_id).execute()
+                if res.data:
+                    print(f"  📝 DB update OK — {list(payload.keys())}")
+                else:
+                    print(f"  ⚠ DB update returned no data — payload={payload} | response={res}")
+                return res
+            except Exception as e:
+                print(f"  ❌ DB update FAILED — payload={payload} | error={e}")
+                return None
 
         if not db_account_id and account_id:
             db_account_id = _resolve_db_account_id(supabase, account_id)
@@ -196,7 +261,7 @@ def terminate_trade(page, symbol: str, account_id: str = None, db_account_id: st
 
                 # Write starting balance to DB immediately (best-effort)
                 balance_col = "primary_starting_balance" if is_primary else "secondary_starting_balance"
-                _update_paired_record(supabase, paired_record_id, {balance_col: initial_balance})
+                _update_paired_record(paired_record_id, {balance_col: initial_balance})
                 print(f"💾 Saved starting balance {initial_balance} → {balance_col}")
             else:
                 print("ℹ️ No relevant paired trade found (yet). Running balance-only monitoring.")
@@ -270,7 +335,7 @@ def terminate_trade(page, symbol: str, account_id: str = None, db_account_id: st
                             if final_balance_received is not None:
                                 update_payload[balance_col] = final_balance_received
                                 
-                            _update_paired_record(supabase, paired_record_id, update_payload)
+                            _update_paired_record(paired_record_id, update_payload)
                             print(f"✅ [{role}] Closed by AUTOMATION — trade_status=done, {status_col}=completed")
 
                             return {
@@ -314,7 +379,7 @@ def terminate_trade(page, symbol: str, account_id: str = None, db_account_id: st
             status_col = "primary_termination_status" if is_primary else "secondary_termination_status"
             balance_col = "primary_final_balance" if is_primary else "secondary_final_balance"
             
-            _update_paired_record(supabase, paired_record_id, {
+            _update_paired_record(paired_record_id, {
                 "exit_signal": signal_type,
                 "exit_triggered_by": db_account_id,
                 "trade_status": "done",

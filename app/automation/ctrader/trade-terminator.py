@@ -41,9 +41,68 @@ def _resolve_db_account_id(supabase, platform_id: str) -> str:
 def terminate_trade(page, symbol: str, account_id: str = None, db_account_id: str = None):
     print(f"\n👀 Monitoring started for {symbol} on account {account_id} / DB {db_account_id}...")
 
+    def _position_row_exists() -> bool:
+        """
+        Best-effort check that a position row for `symbol` exists in the cTrader UI.
+        We reuse the same heuristic as `close-position`: find exact symbol text in the
+        lower (positions) panel area of the viewport.
+        """
+        try:
+            viewport_height = page.viewport_size["height"] if page.viewport_size else 768
+            min_y_for_positions = viewport_height * 0.55
+            symbol_elements = page.locator(f':text-is("{symbol}")').all()
+            for el in symbol_elements:
+                try:
+                    if el.is_visible(timeout=250):
+                        box = el.bounding_box()
+                        if box and box.get("y", 0) > min_y_for_positions:
+                            return True
+                except Exception:
+                    continue
+        except Exception:
+            return False
+        return False
+
+    saw_position_row = False
+
     def _update_paired_record(supabase, record_id, payload):
         """Update a paired_trading_accounts record and log the full response so errors are visible."""
         try:
+            nonlocal saw_position_row
+
+            # Guard: don't write to DB until we've confirmed the trade position exists in UI at least once.
+            if not saw_position_row:
+                saw_position_row = _position_row_exists()
+                if not saw_position_row:
+                    time.sleep(1)
+                    saw_position_row = _position_row_exists()
+            if not saw_position_row:
+                print("  ⚠ DB update skipped — no position row detected in platform yet")
+                return None
+
+            # Guard: the paired row might not exist yet (race with creator). Confirm existence first.
+            exists = (
+                supabase.table("paired_trading_accounts")
+                .select("id")
+                .eq("id", record_id)
+                .limit(1)
+                .execute()
+            )
+            if not (exists.data and len(exists.data) > 0):
+                time.sleep(1)
+                exists = (
+                    supabase.table("paired_trading_accounts")
+                    .select("id")
+                    .eq("id", record_id)
+                    .limit(1)
+                    .execute()
+                )
+            if not (exists.data and len(exists.data) > 0):
+                print(f"  ⚠ DB update skipped — paired_trading_accounts row not found: id={record_id}")
+                return None
+
+            # Small delay to avoid immediate write races after detection.
+            time.sleep(1)
             res = supabase.table("paired_trading_accounts").update(payload).eq("id", record_id).execute()
             if res.data:
                 print(f"  📝 DB update OK — {list(payload.keys())}")
